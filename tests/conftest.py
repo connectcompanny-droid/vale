@@ -6,6 +6,8 @@ from cryptography.fernet import Fernet
 
 os.environ.setdefault("FERNET_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("WEBHOOK_SECRET", "test-secret")
+os.environ.setdefault("SITE_MIN_GAP_SECONDS", "0")
+os.environ.setdefault("QUEUE_MODE", "inline")
 
 from app import db, router  # noqa: E402
 from app.channels import Button, Channel, IncomingMessage, set_channel  # noqa: E402
@@ -79,7 +81,6 @@ async def fresh_db(tmp_path):
 
     db.init_engine(f"sqlite+aiosqlite:///{tmp_path}/t.db")
     await db.create_all()
-    router._seen.clear()
     set_synthesizer(NoSynthesizer())
     yield
     await db.dispose()

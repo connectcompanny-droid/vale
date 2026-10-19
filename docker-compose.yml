@@ -1,20 +1,67 @@
+# Vale: one image, five roles. Scale each independently, e.g.
+#   docker compose up -d --scale worker=3
+# Start-up order: db/redis -> migrate -> api, worker, monitor.
+
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    QUEUE_MODE: redis
+    REDIS_URL: redis://redis:6379/0
+    AUTO_CREATE_TABLES: "false"
+  restart: unless-stopped
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+    redis: { condition: service_healthy }
+
 services:
+  # Applies database migrations, then exits.
+  migrate:
+    build: .
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  # Receives WhatsApp webhooks and enqueues them. Stateless: add replicas behind a load balancer.
   api:
-    build: .
-    env_file: .env
+    <<: *app
     ports: ["8000:8000"]
-    depends_on: [db]
-    restart: unless-stopped
+    environment:
+      QUEUE_MODE: redis
+      REDIS_URL: redis://redis:6379/0
+      AUTO_CREATE_TABLES: "false"
+      WEB_CONCURRENCY: "2"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/ready')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
+  # Conversations, documents, voice notes. Scale with --scale worker=N.
   worker:
-    build: .
-    command: ["python", "worker.py"]
-    env_file: .env
-    depends_on: [db]
-    restart: unless-stopped
-    shm_size: "1gb"  # Chromium needs shared memory
+    <<: *app
+    command: ["arq", "app.jobs.WorkerSettings"]
 
-  # Local Postgres. In production you can point DATABASE_URL at Supabase (EU region) and remove this service.
+  # Watches the government site. Site traffic is capped globally (SITE_MIN_GAP_SECONDS),
+  # so extra monitors add browser capacity, never extra pressure on the site.
+  monitor:
+    <<: *app
+    command: ["python", "run_monitor.py"]
+    shm_size: "1gb"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    restart: unless-stopped
+
+  # Local Postgres. In production point DATABASE_URL at a managed EU Postgres (e.g. Supabase in an
+  # EU region) and remove this service.
   db:
     image: postgres:16-alpine
     environment:
@@ -22,7 +69,11 @@ services:
       POSTGRES_PASSWORD: vale
       POSTGRES_DB: vale
     volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vale"]
+      interval: 10s
     restart: unless-stopped
 
 volumes:
   pgdata:
+  redisdata:

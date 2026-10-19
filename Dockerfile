@@ -10,10 +10,12 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install --with-deps chrome
 
 COPY app ./app
-COPY worker.py .
+COPY migrations ./migrations
+COPY alembic.ini run_monitor.py ./
 
 RUN useradd -m vale && chown -R vale /app
 USER vale
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# API: stateless, scale with more replicas or WEB_CONCURRENCY. Workers and monitor override CMD.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --workers ${WEB_CONCURRENCY:-2}"]

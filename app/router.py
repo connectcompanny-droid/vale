@@ -5,14 +5,17 @@ code before anything reaches the LLM.
 """
 
 import logging
-from collections import OrderedDict
 
 from app import audit
 from app.agent.orchestrator import Agent
 from app.channels import Button, IncomingMessage, get_channel
 from app.citas import service
 from app.citas.catalog import TRAMITES, normalize
+from sqlalchemy.exc import IntegrityError
+
 from app.db import session_scope
+from app.models import ProcessedMessage
+from app.queue import user_lock
 from app.documents.extractor import extract_document
 from app.documents.transcriber import TranscriptionError, transcribe
 from app.i18n import MESSAGES, format_fields, guess_lang, t
@@ -21,7 +24,6 @@ from app.voice.tts import SynthesisError, get_synthesizer
 log = logging.getLogger(__name__)
 
 DELETE_WORDS = ("APAGA TUDO", "APAGAR TUDO", "APAGUE TUDO", "BORRALO TODO", "BORRAR TODO", "DELETE EVERYTHING", "DELETE MY DATA")
-_seen: OrderedDict[str, None] = OrderedDict()
 _agent: Agent | None = None
 
 
@@ -37,15 +39,16 @@ def set_agent(agent: Agent) -> None:
     _agent = agent
 
 
-def _duplicate(message_id: str) -> bool:
+async def _first_time(message_id: str) -> bool:
+    """Record the message id; False if any replica already processed it (provider retries)."""
     if not message_id:
-        return False
-    if message_id in _seen:
         return True
-    _seen[message_id] = None
-    if len(_seen) > 5000:
-        _seen.popitem(last=False)
-    return False
+    try:
+        async with session_scope() as s:
+            s.add(ProcessedMessage(message_id=message_id))
+        return True
+    except IntegrityError:
+        return False
 
 
 def _button_from_text(text: str) -> str | None:
@@ -59,8 +62,13 @@ def _button_from_text(text: str) -> str | None:
 
 
 async def handle(msg: IncomingMessage) -> None:
-    if _duplicate(msg.message_id):
+    if not await _first_time(msg.message_id):
         return
+    async with user_lock(msg.phone):
+        await _handle(msg)
+
+
+async def _handle(msg: IncomingMessage) -> None:
     ch = get_channel()
     try:
         async with session_scope() as s:

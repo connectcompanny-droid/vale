@@ -1,5 +1,7 @@
 # Vale · agente de cita previa de extranjería
 
+> Arquitetura, escala (50 → 10.000 clientes/dia) e operação: veja **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
 Assistente no WhatsApp que vigia as vagas de cita previa de extranjería e reserva a do usuário, **sempre com a confirmação dele**. Esta é a primeira versão funcional do plano "Instinct Europa", focada nos processos de regularização na Espanha.
 
 ## Como funciona
@@ -18,7 +20,7 @@ WhatsApp ──► UAZAPI ──► /webhook/uazapi (FastAPI)
                               │
                          Postgres (dados dos documentos criptografados)
                               ▲
-worker.py ── app/citas/monitor.py ── provider ICP (Playwright) ── site oficial de cita previa
+run_monitor.py ── app/citas/monitor.py ── provider ICP (Playwright) ── site oficial de cita previa
 ```
 
 1. **Consentimento primeiro.** Nenhum documento é lido antes do usuário tocar em "Aceito".
@@ -62,7 +64,12 @@ com saídas para `needs_human`, `cancelled` e `failed`.
 | `app/documents/transcriber.py` | Transcrição de notas de voz (endpoint compatível com OpenAI: OpenAI, Groq, Whisper próprio) |
 | `app/citas/catalog.py` | Trâmites e províncias suportados |
 | `app/citas/service.py` | Regras de negócio e auditoria |
-| `app/citas/monitor.py` | Worker: verifica, oferece, reserva, expira |
+| `app/citas/monitor.py` | Monitor: verifica, oferece, reserva, expira (vários processos em paralelo) |
+| `app/citas/site_guard.py` | Limite global de visitas e pausas compartilhadas por site |
+| `app/queue.py`, `app/jobs.py` | Fila (Redis/arq): a API enfileira, os workers processam; trava por cliente |
+| `app/llm.py` | Cliente único do Claude e limite de chamadas simultâneas |
+| `migrations/` | Migrações do banco (Alembic) |
+| `scripts/simulate_load.py` | Simulação de carga local |
 | `app/citas/providers/icp.py` | Automação do site oficial de cita previa |
 | `app/voice/tts.py` | Voz plugável: `none`, `elevenlabs`, `openai`; para outro serviço, uma classe `Synthesizer` nova |
 | `app/i18n.py` | Mensagens fixas em PT, ES e EN |
@@ -71,7 +78,8 @@ com saídas para `needs_human`, `cancelled` e `failed`.
 
 ```bash
 cp .env.example .env      # preencha as chaves
-docker compose up --build # api em :8000 + worker + postgres
+docker compose up --build # migrate, api :8000, worker, monitor, postgres, redis
+docker compose up -d --scale worker=3   # mais capacidade de conversa
 ```
 
 Na UAZAPI, configure o webhook para `https://SEU-DOMINIO/webhook/uazapi?secret=SEU_WEBHOOK_SECRET` com o evento `messages`.
@@ -90,7 +98,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 3. **Política do WhatsApp.** O acesso de assistentes de IA gerais ao WhatsApp na UE depende da medida provisória da Comissão Europeia. Mantenha Telegram/SMS como canal reserva.
 4. **Jurídico e RGPD.** DPIA, termos de uso, política de privacidade e base legal para tratar documentos de identidade. Validar com advogado de imigração que o fluxo está dentro da lei.
 5. **Certificados (TLS).** O Vale **nunca** ignora erros de certificado, porque dados de passaporte passam por essa conexão. Em produção ele usa o Google Chrome real (`BROWSER_CHANNEL=chrome`, instalado no Docker), cuja lista de certificados se mantém atualizada. Se aparecer `ERR_CERT_*`, o monitor pausa todas as verificações por `TLS_PAUSE_MINUTES` e registra um `ALERT` no log: verifique proxy, antivírus ou rede do servidor antes de retomar.
-6. **Migrações.** Hoje as tabelas são criadas no start (`create_all`). Antes de produção, adotar Alembic.
+
 
 ## Próximos passos
 

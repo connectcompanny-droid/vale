@@ -12,6 +12,7 @@ from typing import Any
 from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import llm
 from app.agent.prompts import SYSTEM_PROMPT
 from app.citas import service
 from app.citas.catalog import PROVINCES, TRAMITES, find_province
@@ -82,7 +83,7 @@ TOOLS = [
 
 class Agent:
     def __init__(self, client: AsyncAnthropic | None = None):
-        self.client = client or AsyncAnthropic(api_key=get_settings().anthropic_api_key)
+        self.client = client or llm.client()
 
     async def _run_tool(self, session: AsyncSession, user: User, name: str, args: dict, on_delete: Callable[[], Awaitable[None]],
                         on_data: Callable[[dict], Awaitable[None]] | None) -> Any:
@@ -140,9 +141,10 @@ class Agent:
         messages: list[dict] = [*history, {"role": "user", "content": text}]
         final = ""
         for _ in range(MAX_STEPS):
-            resp = await self.client.messages.create(
-                model=get_settings().claude_model, max_tokens=700, system=system, tools=TOOLS, messages=messages,
-            )
+            async with llm.limiter():
+                resp = await self.client.messages.create(
+                    model=get_settings().claude_model, max_tokens=700, system=system, tools=TOOLS, messages=messages,
+                )
             messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
             if resp.stop_reason != "tool_use":
                 final = "".join(b.text for b in resp.content if b.type == "text").strip()

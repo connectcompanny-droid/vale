@@ -11,6 +11,7 @@ from typing import Literal
 from anthropic import AsyncAnthropic
 from pydantic import BaseModel
 
+from app import llm
 from app.config import get_settings
 
 
@@ -46,9 +47,18 @@ PROMPT = (
 
 
 async def extract_document(image: bytes, mime: str, client: AsyncAnthropic | None = None) -> ExtractedDocument:
-    client = client or AsyncAnthropic(api_key=get_settings().anthropic_api_key)
+    client = client or llm.client()
     media_type = mime if mime in ("image/jpeg", "image/png", "image/webp", "image/gif") else "image/jpeg"
-    resp = await client.messages.create(
+    async with llm.limiter():
+        resp = await _create(client, image, media_type)
+    for block in resp.content:
+        if block.type == "tool_use":
+            return ExtractedDocument.model_validate(block.input)
+    return ExtractedDocument(document_kind="unreadable", issues=["no_output"])
+
+
+async def _create(client, image: bytes, media_type: str):
+    return await client.messages.create(
         model=get_settings().claude_model,
         max_tokens=800,
         system=PROMPT,
@@ -64,7 +74,3 @@ async def extract_document(image: bytes, mime: str, client: AsyncAnthropic | Non
             }
         ],
     )
-    for block in resp.content:
-        if block.type == "tool_use":
-            return ExtractedDocument.model_validate(block.input)
-    return ExtractedDocument(document_kind="unreadable", issues=["no_output"])

@@ -36,8 +36,15 @@ class CitaProvider(ABC):
     @abstractmethod
     async def book(self, request_id: int, slot: Slot, profile: dict, phone: str, hold_key: str | None) -> BookResult: ...
 
+    def owns(self, hold_key: str) -> bool:
+        """True if the held browser session `hold_key` lives in this process."""
+        return True
+
     async def release(self, hold_key: str) -> None:  # noqa: B027
         """Close a held session (offer rejected or expired)."""
+
+    async def sweep(self) -> None:  # noqa: B027
+        """Close held sessions nobody will use any more (e.g. expired by another process)."""
 
     async def close(self) -> None:  # noqa: B027
         """Shut down shared resources."""

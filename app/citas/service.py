@@ -9,7 +9,7 @@ database directly; both go through these functions, which enforce the rules:
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -210,8 +210,25 @@ async def due_groups(session: AsyncSession, limit: int) -> list[tuple[CitaReques
     for members in groups.values():
         last = max((aware(m.last_checked_at) for m in members if m.last_checked_at), default=None)
         if last is None or last <= cutoff:
-            due.append((members[0], [m.id for m in members[1:]]))
-    return due[:limit]
+            due.append((last, -len(members), members[0], [m.id for m in members[1:]]))
+    # Never checked first, then least recently checked; ties go to the group with more clients.
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    due.sort(key=lambda d: (d[0] or epoch, d[1]))
+    return [(rep, others) for _, _, rep, others in due[:limit]]
+
+
+async def claim_group(session: AsyncSession, request_id: int) -> bool:
+    """Atomically claim a group's check, so two monitor processes never check the same
+    procedure at once. Works because the representative's own timestamp moves first."""
+    cutoff = utcnow() - timedelta(minutes=get_settings().monitor_min_interval_minutes)
+    res = await session.execute(
+        update(CitaRequest)
+        .where(CitaRequest.id == request_id, CitaRequest.state == RequestState.monitoring,
+               or_(CitaRequest.last_checked_at.is_(None), CitaRequest.last_checked_at <= cutoff))
+        .values(last_checked_at=utcnow())
+        .execution_options(synchronize_session=False)
+    )
+    return res.rowcount == 1
 
 
 async def mark_checked(session: AsyncSession, req: CitaRequest, outcome: str) -> None:

@@ -7,7 +7,24 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "sqlite+aiosqlite:///./vale.db"
+    db_pool_size: int = 10
+    db_max_overflow: int = 10
+    # Dev/tests only. In production the schema is managed by Alembic (`alembic upgrade head`).
+    auto_create_tables: bool = True
     fernet_key: str = ""
+
+    # Job queue. "inline" = process in the API process (dev/tests). "redis" = arq workers (production).
+    queue_mode: str = "inline"
+    redis_url: str = "redis://localhost:6379/0"
+    # Jobs handled concurrently by one worker process (conversations, documents, audio).
+    worker_concurrency: int = 20
+    # Simultaneous Claude calls per worker process (protects the API rate limit).
+    llm_concurrency: int = 8
+    # Unique id of this process; browser sessions are owned by the process that opened them.
+    instance_id: str = ""
+    # Optional token for /metrics (sent as ?token=...). Empty = metrics disabled.
+    metrics_token: str = ""
+    log_json: bool = False
 
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-5-5"
@@ -33,7 +50,12 @@ class Settings(BaseSettings):
     tts_max_chars: int = 600
 
     monitor_min_interval_minutes: int = 10
+    # Browsers open at the same time in one monitor process.
     monitor_max_concurrency: int = 2
+    # GLOBAL politeness limit: minimum seconds between two visits to the government site, across
+    # ALL monitor processes together. This, not the number of clients, sets the site traffic:
+    # 30 s = at most 2 visits/min (2,880/day). Adding servers never raises it.
+    site_min_gap_seconds: int = 30
     offer_ttl_minutes: int = 10
     headless: bool = True
     # "chrome" = real Google Chrome (current certificate root store, auto-updated). Empty = Playwright's
@@ -48,4 +70,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if not s.instance_id:
+        import os
+        import socket
+
+        s.instance_id = f"{socket.gethostname()}-{os.getpid()}"
+    return s

@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.citas import service
+from app.citas import site_guard
 from app.citas.monitor import Monitor
 from app.citas.providers.base import CheckResult
 from app.citas.providers.icp import classify_error
@@ -38,7 +39,7 @@ async def test_untrusted_certificate_pauses_all_checks(channel, provider, make_m
     provider.check = check
     m = Monitor(provider)
     await m.tick()
-    assert len(calls) == 1 and m.paused()
+    assert len(calls) == 1 and await m.paused()
     sent_before = len(channel.sent)
 
     async with session_scope() as s:  # make the request due again
@@ -48,7 +49,10 @@ async def test_untrusted_certificate_pauses_all_checks(channel, provider, make_m
     assert len(calls) == 1  # paused: no new request to the site
     assert len(channel.sent) == sent_before  # the client is not bothered with infrastructure errors
 
-    m.paused_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await site_guard.resume()
+    async with session_scope() as s:
+        from app.models import CitaRequest
+        (await s.scalar(select(CitaRequest))).last_checked_at = datetime.now(timezone.utc) - timedelta(hours=1)
     await m.tick()
     assert len(calls) == 2  # resumes after the pause
 
@@ -69,4 +73,6 @@ async def test_firewall_block_pauses_for_hours(channel, provider, make_msg):
     provider.check = check
     m = Monitor(provider)
     await m.tick()
-    assert m.paused() and m.paused_until - datetime.now(timezone.utc) > timedelta(hours=5)
+    until = await site_guard.paused_until()
+    assert until and until - datetime.now(timezone.utc) > timedelta(hours=5)
+    assert await Monitor(provider).paused()  # every other process sees the same pause

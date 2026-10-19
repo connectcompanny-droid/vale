@@ -13,6 +13,7 @@ IMPORTANT, before enabling in production:
 import asyncio
 import logging
 import random
+import time
 import uuid
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
@@ -96,7 +97,8 @@ class ICPProvider(CitaProvider):
     def __init__(self):
         self._pw = None
         self._browser: Browser | None = None
-        self._held: dict[str, tuple[BrowserContext, Page]] = {}
+        self._held: dict[str, tuple[BrowserContext, Page, float]] = {}
+        self._prefix = f"{get_settings().instance_id}:"
 
     async def _ensure_browser(self) -> Browser:
         if self._browser is None:
@@ -264,8 +266,8 @@ class ICPProvider(CitaProvider):
             if not slots:
                 return CheckResult("no_slots")
             # Keep the session open so the user's approval books exactly this slot.
-            key = uuid.uuid4().hex
-            self._held[key] = (ctx, page)
+            key = self._prefix + uuid.uuid4().hex
+            self._held[key] = (ctx, page, time.monotonic())
             keep = True
             return CheckResult("slots", slots=slots, hold_key=key)
         except Exception as e:  # network, layout change, timeout
@@ -281,7 +283,7 @@ class ICPProvider(CitaProvider):
         held = self._held.pop(hold_key, None) if hold_key else None
         if not held:
             return BookResult("slot_gone", reason="session_expired")
-        ctx, page = held
+        ctx, page, _ = held
         try:
             rid = slot.raw.get("radio_id")
             if not rid or not await (await self._f(page)).locator(f"#{rid}").count():
@@ -308,10 +310,19 @@ class ICPProvider(CitaProvider):
         finally:
             await ctx.close()
 
+    def owns(self, hold_key: str) -> bool:
+        return hold_key.startswith(self._prefix)
+
     async def release(self, hold_key: str) -> None:
         held = self._held.pop(hold_key, None)
         if held:
             await held[0].close()
+
+    async def sweep(self) -> None:
+        ttl = (get_settings().offer_ttl_minutes + 2) * 60
+        now = time.monotonic()
+        for key in [k for k, (_, _, t0) in self._held.items() if now - t0 > ttl]:
+            await self.release(key)
 
     async def close(self) -> None:
         for key in list(self._held):

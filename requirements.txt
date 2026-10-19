@@ -8,4 +8,6 @@ asyncpg>=0.30
 aiosqlite>=0.20
 cryptography>=43
 anthropic>=0.40
+arq>=0.26
+alembic>=1.13
 playwright==1.48.0  # must match the Playwright Docker image tag

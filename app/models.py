@@ -107,7 +107,7 @@ class SlotOffer(Base):
     office: Mapped[str] = mapped_column(String(200))
     starts_at: Mapped[str] = mapped_column(String(64))  # as shown by the site, e.g. "23/10/2026 10:00"
     raw: Mapped[dict] = mapped_column(JSON, default=dict)
-    state: Mapped[OfferState] = mapped_column(Enum(OfferState), default=OfferState.pending)
+    state: Mapped[OfferState] = mapped_column(Enum(OfferState), default=OfferState.pending, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -128,3 +128,24 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(String(64))
     detail: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProcessedMessage(Base):
+    """Webhook idempotency across all API/worker replicas (WhatsApp providers retry deliveries)."""
+
+    __tablename__ = "processed_messages"
+
+    message_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SiteState(Base):
+    """Shared state per external site, so every monitor process obeys the same pause and pace."""
+
+    __tablename__ = "site_state"
+
+    site: Mapped[str] = mapped_column(String(32), primary_key=True)
+    last_visit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pause_reason: Mapped[str | None] = mapped_column(String(64))
+    visits: Mapped[int] = mapped_column(Integer, default=0)
