@@ -1,0 +1,90 @@
+# Vale · agente de cita previa de extranjería
+
+Assistente no WhatsApp que vigia as vagas de cita previa de extranjería e reserva a do usuário, **sempre com a confirmação dele**. Esta é a primeira versão funcional do plano "Instinct Europa", focada nos processos de regularização na Espanha.
+
+## Como funciona
+
+```
+WhatsApp ──► UAZAPI ──► /webhook/uazapi (FastAPI)
+                              │
+                              ▼
+                        app/router.py
+     ┌────────────┬───────────┼─────────────┬──────────────┐
+  consentimento  apagar     botões de     foto do        texto livre
+  (código fixo)  dados      aprovação     documento      (agente Claude)
+                              │              │              │
+                              ▼              ▼              ▼
+                      app/citas/service.py  ◄── regras de negócio + auditoria
+                              │
+                         Postgres (dados dos documentos criptografados)
+                              ▲
+worker.py ── app/citas/monitor.py ── provider ICP (Playwright) ── site oficial de cita previa
+```
+
+1. **Consentimento primeiro.** Nenhum documento é lido antes do usuário tocar em "Aceito".
+2. **Documento por foto.** O Claude lê o passaporte/NIE/TIE com visão. A imagem nunca é salva; só os campos extraídos, criptografados (Fernet).
+3. **Pedido de cita.** O agente pergunta a província e o trâmite e abre o pedido. Fica `awaiting_documents` até ter os dados necessários e depois passa para `monitoring`.
+4. **Monitor.** O worker verifica o site oficial em intervalos educados (mínimo de 10 min por pedido, concorrência limitada).
+5. **Oferta com aprovação.** Quando acha vaga, mantém a sessão do navegador aberta e manda os botões **Confirmar / Não quero**. A vaga fica reservada para o usuário por 10 min.
+6. **Reserva.** Só o toque em *Confirmar* leva à reserva. O agente de IA **não consegue** aprovar nem reservar.
+7. **Captcha = pessoa no circuito.** O Vale nunca resolve captchas. Se aparecer um, o pedido vai para `needs_human` e o usuário recebe o link para concluir.
+
+### Estados do pedido
+
+`awaiting_documents → monitoring → offer_pending → booking → booked`
+com saídas para `needs_human`, `cancelled` e `failed`.
+
+### Regras de proteção (em código, não só no prompt)
+
+- Um pedido ativo por usuário e trâmite (restrição única no banco): sem acúmulo de vagas.
+- Reserva só em nome do próprio usuário, com os dados dele, após aprovação explícita.
+- Uma oferta só pode ser aprovada pelo dono e antes de expirar.
+- Tudo o que é feito em nome do usuário vai para `audit_events` (transparência do AI Act).
+- "apaga tudo" / "bórralo todo" / "delete everything" → confirmação → apaga documentos, pedidos e usuário; o log de auditoria fica anonimizado.
+
+## Estrutura
+
+| Caminho | O que faz |
+|---|---|
+| `app/main.py` | API FastAPI, webhook da UAZAPI com segredo |
+| `app/router.py` | Roteamento de cada mensagem (caminhos críticos sem IA) |
+| `app/channels/` | Adaptador de canal; `uazapi.py` hoje, Meta Cloud API/Telegram depois |
+| `app/agent/` | Agente Claude com ferramentas (abrir, consultar e cancelar pedidos, e-mail, apagar dados) |
+| `app/documents/extractor.py` | Leitura de documentos por visão, saída estruturada |
+| `app/citas/catalog.py` | Trâmites e províncias suportados |
+| `app/citas/service.py` | Regras de negócio e auditoria |
+| `app/citas/monitor.py` | Worker: verifica, oferece, reserva, expira |
+| `app/citas/providers/icp.py` | Automação do site oficial de cita previa |
+| `app/i18n.py` | Mensagens fixas em PT, ES e EN |
+
+## Rodando
+
+```bash
+cp .env.example .env      # preencha as chaves
+docker compose up --build # api em :8000 + worker + postgres
+```
+
+Na UAZAPI, configure o webhook para `https://SEU-DOMINIO/webhook/uazapi?secret=SEU_WEBHOOK_SECRET` com o evento `messages`.
+
+Testes:
+
+```bash
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+## Antes de colocar no ar
+
+1. **Validar o provider ICP.** Os seletores em `SEL` e os textos em `TEXT` (`app/citas/providers/icp.py`) precisam ser conferidos no site real, para cada província de lançamento. Teste com `HEADLESS=false`.
+2. **Conferir a UAZAPI.** Caminhos de envio (`/send/text`, `/send/menu`, `/message/download`) e campos do webhook estão isolados em `app/channels/uazapi.py`; compare com a integração do Sofia.
+3. **Política do WhatsApp.** O acesso de assistentes de IA gerais ao WhatsApp na UE depende da medida provisória da Comissão Europeia. Mantenha Telegram/SMS como canal reserva.
+4. **Jurídico e RGPD.** DPIA, termos de uso, política de privacidade e base legal para tratar documentos de identidade. Validar com advogado de imigração que o fluxo está dentro da lei.
+5. **Migrações.** Hoje as tabelas são criadas no start (`create_all`). Antes de produção, adotar Alembic.
+
+## Próximos passos
+
+- Lembrete na véspera da cita e lista do que levar.
+- Preferências do usuário (escritório, dias, horários).
+- Encaminhamento para advogado parceiro (G7 Migration) quando o caso for jurídico.
+- Página de status para o usuário e painel admin.
+- Canal reserva (Telegram/SMS).

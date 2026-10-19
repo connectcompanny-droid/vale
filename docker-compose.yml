@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on: [db]
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "worker.py"]
+    env_file: .env
+    depends_on: [db]
+    restart: unless-stopped
+    shm_size: "1gb"  # Chromium needs shared memory
+
+  # Local Postgres. In production you can point DATABASE_URL at Supabase (EU region) and remove this service.
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vale
+      POSTGRES_PASSWORD: vale
+      POSTGRES_DB: vale
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
