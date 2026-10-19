@@ -195,18 +195,36 @@ async def cancel_request(session: AsyncSession, user: User, request_id: int) -> 
     return req
 
 
-async def due_for_check(session: AsyncSession, limit: int) -> list[CitaRequest]:
+async def due_groups(session: AsyncSession, limit: int) -> list[tuple[CitaRequest, list[int]]]:
+    """One check per (province, trámite), not per client: the site sees a single visit no matter
+    how many clients wait for the same procedure. The representative is the client who has waited
+    longest (first come, first served); the rest of the group shares the result."""
     cutoff = utcnow() - timedelta(minutes=get_settings().monitor_min_interval_minutes)
     rows = (await session.scalars(
-        select(CitaRequest).where(CitaRequest.state == RequestState.monitoring).order_by(CitaRequest.last_checked_at.is_not(None), CitaRequest.last_checked_at)
+        select(CitaRequest).where(CitaRequest.state == RequestState.monitoring).order_by(CitaRequest.created_at, CitaRequest.id)
     )).all()
-    return [r for r in rows if r.last_checked_at is None or aware(r.last_checked_at) <= cutoff][:limit]
+    groups: dict[tuple[str, str], list[CitaRequest]] = {}
+    for r in rows:
+        groups.setdefault((r.province, r.tramite_code), []).append(r)
+    due = []
+    for members in groups.values():
+        last = max((aware(m.last_checked_at) for m in members if m.last_checked_at), default=None)
+        if last is None or last <= cutoff:
+            due.append((members[0], [m.id for m in members[1:]]))
+    return due[:limit]
 
 
 async def mark_checked(session: AsyncSession, req: CitaRequest, outcome: str) -> None:
     req.last_checked_at = utcnow()
     req.checks += 1
     audit.record(session, "checked", req.user_id, req.id, outcome=outcome)
+
+
+async def mark_group_checked(session: AsyncSession, request_ids: list[int], outcome: str, via: int) -> None:
+    for rid in request_ids:
+        req = await session.get(CitaRequest, rid)
+        if req and req.state == RequestState.monitoring:
+            await mark_checked(session, req, f"{outcome} (shared check #{via})")
 
 
 async def mark_needs_human(session: AsyncSession, req: CitaRequest, reason: str) -> None:

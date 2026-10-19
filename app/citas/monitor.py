@@ -60,8 +60,8 @@ class Monitor:
             return
         await self.book_approved()
         async with session_scope() as s:
-            due = [r.id for r in await service.due_for_check(s, get_settings().monitor_max_concurrency)]
-        await asyncio.gather(*(self.check_one(rid) for rid in due))
+            due = [(rep.id, others) for rep, others in await service.due_groups(s, get_settings().monitor_max_concurrency)]
+        await asyncio.gather(*(self.check_one(rid, others) for rid, others in due))
 
     async def expire_offers(self) -> None:
         async with session_scope() as s:
@@ -71,7 +71,9 @@ class Monitor:
                 user = offer.request.user
                 await get_channel().send_text(user.phone, t("offer_expired", user.lang))
 
-    async def check_one(self, request_id: int) -> None:
+    async def check_one(self, request_id: int, group: list[int] | None = None) -> None:
+        """Check the site once for `request_id` (the longest-waiting client). When slots open, that
+        client gets the offer; the others in the group stay due and are served next, in order."""
         async with self.sem:
             async with session_scope() as s:
                 req = await s.get(CitaRequest, request_id, options=[selectinload(CitaRequest.user)])
@@ -88,7 +90,10 @@ class Monitor:
                     if result.hold_key:
                         await self.provider.release(result.hold_key)
                     return
-                await service.mark_checked(s, req, result.status if not result.reason else f"{result.status}:{result.reason}")
+                outcome = result.status if not result.reason else f"{result.status}:{result.reason}"
+                await service.mark_checked(s, req, outcome)
+                if group and result.status != "slots":
+                    await service.mark_group_checked(s, group, outcome, via=request_id)
                 if result.reason == "tls_untrusted":
                     self._pause_for_tls(request_id)
                 elif result.reason == "blocked_by_site":
