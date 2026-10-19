@@ -84,23 +84,25 @@ async def dump_elements(page: Page) -> None:
             print(f"          {ln}")
 
 
-async def pick(page: Page, selector: str, predicate, what: str) -> bool:
-    select = page.locator(selector).first
-    if not await select.count():
+async def pick(page, selector: str, predicate, what: str) -> bool:
+    selects = await page.locator(selector).all()
+    if not selects:
         fail(f"{what}: selector {selector!r} not found on the page")
         await dump_elements(page.page)
         return False
-    texts = []
-    for opt in await select.locator("option").all():
-        text = (await opt.inner_text()).strip()
-        texts.append(text)
-        if predicate(text):
-            await select.select_option(value=await opt.get_attribute("value"))
-            ok(f"{what}: chose {text!r}")
-            return True
-    fail(f"{what}: no matching option. Options on the page:")
-    for t in texts:
-        print(f"          - {t}")
+    listing = []
+    for i, select in enumerate(selects):
+        label = await select.get_attribute("id") or await select.get_attribute("name") or f"list {i + 1}"
+        for opt in await select.locator("option").all():
+            text = (await opt.inner_text()).strip()
+            listing.append((label, text))
+            if predicate(text):
+                await select.select_option(value=await opt.get_attribute("value"))
+                ok(f"{what}: chose {text!r} (in {label})")
+                return True
+    fail(f"{what}: no matching option. Options on the page, by list:")
+    for label, text in listing:
+        print(f"          [{label}] {text}")
     return False
 
 

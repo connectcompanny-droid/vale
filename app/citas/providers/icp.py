@@ -104,6 +104,35 @@ class ICPProvider(CitaProvider):
     async def _captcha(self, page: Page) -> bool:
         return any([await fr.locator(SEL["captcha"]).count() > 0 for fr in page.frames])
 
+    async def _select_by_text(self, page, selector: str, predicate) -> bool:
+        """Pick the first option matching `predicate` across ALL selects matching `selector`
+        (the trámite page has one list per group: extranjería offices, police, ...)."""
+        for select in await page.locator(selector).all():
+            for opt in await select.locator("option").all():
+                text = (await opt.inner_text()).strip()
+                if predicate(text):
+                    await select.select_option(value=await opt.get_attribute("value"))
+                    return True
+        return False
+
+    async def _f(self, page: Page, timeout_s: float = 20.0):
+        """Frame holding the form: the ICP page may render late or inside an iframe."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while True:
+            for frame in page.frames:
+                try:
+                    if await frame.locator("select, input[type='submit'], input[type='button'], button").count():
+                        return frame
+                except Exception:
+                    pass
+            if loop.time() > deadline:
+                return page.main_frame
+            await asyncio.sleep(0.5)
+
+    async def _captcha(self, page: Page) -> bool:
+        return any([await fr.locator(SEL["captcha"]).count() > 0 for fr in page.frames])
+
     async def _select_by_text(self, page: Page, selector: str, predicate) -> bool:
         select = page.locator(selector).first
         if not await select.count():
