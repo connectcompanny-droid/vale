@@ -27,25 +27,27 @@ BASE_URL = "https://icp.administracionelectronica.gob.es/icpplus/index.html"
 
 # --- VERIFY against the live site ---
 SEL = {
-    "province": "select#form",
-    "accept": "#btnAceptar",
-    "tramite": "select[id^='tramiteGrupo']",
-    "enter": "#btnEntrar",
-    "doc_passport": "#rdbTipoDocPas",
-    "doc_nie": "#rdbTipoDocNie",
-    "doc_number": "#txtIdCitado",
-    "name": "#txtDesCitado",
-    "country": "#txtPaisNac",
-    "send": "#btnEnviar",
-    "office": "#idSede",
-    "next": "#btnSiguiente",
-    "phone": "#txtTelefonoCitado",
-    "email1": "#emailUNO",
-    "email2": "#emailDOS",
+    # Several candidates per element (CSS "a, b, c"): the first match wins. Narrow these down
+    # to the real ids once confirmed with scripts/try_icp.py.
+    "province": "select#form, select[name='form'], select[id*='rovinc' i], select[name*='rovinc' i], form select",
+    "accept": "#btnAceptar, input[value='Aceptar'], button:has-text('Aceptar')",
+    "tramite": "select[id^='tramiteGrupo'], select[name^='tramiteGrupo'], select[id*='tramite' i]",
+    "enter": "#btnEntrar, input[value='Entrar'], button:has-text('Entrar')",
+    "doc_passport": "#rdbTipoDocPas, input[type='radio'][value*='PASAPORTE' i]",
+    "doc_nie": "#rdbTipoDocNie, input[type='radio'][value*='N.I.E' i], input[type='radio'][value*='NIE' i]",
+    "doc_number": "#txtIdCitado, input[name='txtIdCitado']",
+    "name": "#txtDesCitado, input[name='txtDesCitado']",
+    "country": "#txtPaisNac, select[name='txtPaisNac']",
+    "send": "#btnEnviar, input[value*='Enviar' i], input[value*='Solicitar' i], button:has-text('Solicitar')",
+    "office": "#idSede, select[name='idSede']",
+    "next": "#btnSiguiente, input[value='Siguiente'], button:has-text('Siguiente')",
+    "phone": "#txtTelefonoCitado, input[name='txtTelefonoCitado']",
+    "email1": "#emailUNO, input[name='emailUNO']",
+    "email2": "#emailDOS, input[name='emailDOS']",
     "slot_radio": "input[type='radio'][name^='rdbCita']",
     "confirm_check": "#chkTotal",
     "send_email_check": "#enviarCorreo",
-    "confirm": "#btnConfirmar",
+    "confirm": "#btnConfirmar, input[value*='Confirmar' i], button:has-text('Confirmar')",
     "captcha": "iframe[src*='recaptcha'], iframe[src*='hcaptcha'], #captcha",
 }
 TEXT = {
@@ -88,11 +90,13 @@ class ICPProvider(CitaProvider):
         return await page.locator(SEL["captcha"]).count() > 0
 
     async def _select_by_text(self, page: Page, selector: str, predicate) -> bool:
-        options = await page.locator(f"{selector} option").all()
-        for opt in options:
+        select = page.locator(selector).first
+        if not await select.count():
+            return False
+        for opt in await select.locator("option").all():
             text = (await opt.inner_text()).strip()
             if predicate(text):
-                await page.select_option(selector, value=await opt.get_attribute("value"))
+                await select.select_option(value=await opt.get_attribute("value"))
                 return True
         return False
 
@@ -103,26 +107,26 @@ class ICPProvider(CitaProvider):
         await _pause()
         if not await self._select_by_text(page, SEL["province"], lambda t: PROVINCES[province].lower() in t.lower()):
             return CheckResult("error", reason="province_option_not_found")
-        await page.click(SEL["accept"])
+        await page.locator(SEL["accept"]).first.click()
         await _pause()
         if not await self._select_by_text(page, SEL["tramite"], lambda t: label_matches(tramite, t)):
             return CheckResult("error", reason="tramite_option_not_found")
-        await page.click(SEL["accept"])
+        await page.locator(SEL["accept"]).first.click()
         await _pause()
-        await page.click(SEL["enter"])
+        await page.locator(SEL["enter"]).first.click()
         await _pause()
 
         number = str(profile.get("nie") or profile.get("document_number") or "")
-        await page.check(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"])
-        await page.fill(SEL["doc_number"], number)
-        await page.fill(SEL["name"], str(profile.get("full_name", "")).upper())
+        await page.locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
+        await page.locator(SEL["doc_number"]).first.fill(number)
+        await page.locator(SEL["name"]).first.fill(str(profile.get("full_name", "")).upper())
         if await page.locator(SEL["country"]).count():
             await self._select_by_text(page, SEL["country"], lambda t: str(profile.get("nationality", "")).upper() in t.upper())
         if await self._captcha(page):
             return CheckResult("needs_human", reason="captcha")
-        await page.click(SEL["send"])
+        await page.locator(SEL["send"]).first.click()
         await _pause()
-        await page.click(SEL["send"])  # "Solicitar cita"
+        await page.locator(SEL["send"]).first.click()  # "Solicitar cita"
         await _pause(1.5, 3.0)
 
         body = (await page.inner_text("body")).lower()
@@ -133,16 +137,16 @@ class ICPProvider(CitaProvider):
 
         if await page.locator(SEL["office"]).count():
             # First office with availability; a later version can honour user preferences.
-            await page.select_option(SEL["office"], index=1)
-            await page.click(SEL["next"])
+            await page.locator(SEL["office"]).first.select_option(index=1)
+            await page.locator(SEL["next"]).first.click()
             await _pause()
         if await page.locator(SEL["phone"]).count():
-            await page.fill(SEL["phone"], phone[-9:] if phone else "")
+            await page.locator(SEL["phone"]).first.fill(phone[-9:] if phone else "")
             email = str(profile.get("email", ""))
             if email and await page.locator(SEL["email1"]).count():
-                await page.fill(SEL["email1"], email)
-                await page.fill(SEL["email2"], email)
-            await page.click(SEL["next"])
+                await page.locator(SEL["email1"]).first.fill(email)
+                await page.locator(SEL["email2"]).first.fill(email)
+            await page.locator(SEL["next"]).first.click()
             await _pause()
         return None
 
@@ -187,15 +191,15 @@ class ICPProvider(CitaProvider):
             if not rid or not await page.locator(f"#{rid}").count():
                 return BookResult("slot_gone")
             await page.check(f"#{rid}")
-            await page.click(SEL["next"])
+            await page.locator(SEL["next"]).first.click()
             await _pause()
             if await self._captcha(page):
                 return BookResult("needs_human", reason="captcha")
             if await page.locator(SEL["confirm_check"]).count():
-                await page.check(SEL["confirm_check"])
+                await page.locator(SEL["confirm_check"]).first.check()
             if await page.locator(SEL["send_email_check"]).count():
-                await page.check(SEL["send_email_check"])
-            await page.click(SEL["confirm"])
+                await page.locator(SEL["send_email_check"]).first.check()
+            await page.locator(SEL["confirm"]).first.click()
             await _pause(1.5, 3.0)
             body = await page.inner_text("body")
             if TEXT["reference"] not in body.lower():

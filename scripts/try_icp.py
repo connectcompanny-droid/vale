@@ -39,34 +39,54 @@ def fail(msg: str) -> None:
     print(f"  FAIL  {msg}")
 
 
-async def options(page: Page, selector: str) -> list[str]:
-    return [(await o.inner_text()).strip() for o in await page.locator(f"{selector} option").all()]
+async def dump_elements(page: Page) -> None:
+    """Print the real ids/names of every form control, so the selectors can be fixed."""
+    items = await page.evaluate(
+        """() => [...document.querySelectorAll('select, input, button, a.btn, iframe')].map(e => ({
+            tag: e.tagName.toLowerCase(), type: e.type || '', id: e.id || '', name: e.getAttribute('name') || '',
+            value: (e.value || '').slice(0, 40), text: (e.innerText || '').trim().slice(0, 40),
+            src: (e.src || '').slice(0, 60), visible: !!(e.offsetWidth || e.offsetHeight) }))"""
+    )
+    DEBUG.mkdir(exist_ok=True)
+    lines = [f"{i['tag']:7} type={i['type']:9} id={i['id']!r:28} name={i['name']!r:24} value={i['value']!r:22} text={i['text']!r} {'src=' + i['src'] if i['src'] else ''} {'' if i['visible'] else '(hidden)'}" for i in items]
+    out = DEBUG / f"{step_no:02d}-elements.txt"
+    out.write_text("\n".join(lines), encoding="utf-8")
+    print(f"        Elements on this page (also saved to {out}):")
+    for ln in lines:
+        if "(hidden)" not in ln:
+            print(f"          {ln}")
 
 
 async def pick(page: Page, selector: str, predicate, what: str) -> bool:
-    if not await page.locator(selector).count():
+    select = page.locator(selector).first
+    if not await select.count():
         fail(f"{what}: selector {selector!r} not found on the page")
+        await dump_elements(page)
         return False
-    for opt in await page.locator(f"{selector} option").all():
+    texts = []
+    for opt in await select.locator("option").all():
         text = (await opt.inner_text()).strip()
+        texts.append(text)
         if predicate(text):
-            await page.select_option(selector, value=await opt.get_attribute("value"))
+            await select.select_option(value=await opt.get_attribute("value"))
             ok(f"{what}: chose {text!r}")
             return True
     fail(f"{what}: no matching option. Options on the page:")
-    for t in await options(page, selector):
+    for t in texts:
         print(f"          - {t}")
     return False
 
 
 async def click(page: Page, key: str) -> bool:
     sel = SEL[key]
-    if not await page.locator(sel).count():
+    btn = page.locator(sel).first
+    if not await btn.count():
         fail(f"button {key}: selector {sel!r} not found")
+        await dump_elements(page)
         return False
-    await page.click(sel)
+    await btn.click()
     await page.wait_for_load_state("domcontentloaded")
-    ok(f"clicked {key} ({sel})")
+    ok(f"clicked {key}")
     return True
 
 
@@ -106,9 +126,13 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
             if not await click(page, "enter"):
                 return
             await snap(page, "data-form")
+            missing = False
             for key in ("doc_passport", "doc_nie", "doc_number", "name", "country", "send"):
                 present = await page.locator(SEL[key]).count() > 0
-                (ok if present else fail)(f"field {key}: {SEL[key]!r} {'found' if present else 'NOT found'}")
+                missing |= not present
+                (ok if present else fail)(f"field {key}: {'found' if present else 'NOT found'}")
+            if missing:
+                await dump_elements(page)
             if await captcha(page):
                 return
             if not check:
@@ -119,9 +143,9 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
             number = input("     Passport or NIE number: ").strip()
             name = input("     Full name as on the document: ").strip().upper()
             country = input("     Nationality in Spanish (e.g. BRASIL): ").strip().upper()
-            await page.check(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"])
-            await page.fill(SEL["doc_number"], number)
-            await page.fill(SEL["name"], name)
+            await page.locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
+            await page.locator(SEL["doc_number"]).first.fill(number)
+            await page.locator(SEL["name"]).first.fill(name)
             if await page.locator(SEL["country"]).count():
                 await pick(page, SEL["country"], lambda t: country in t.upper(), "nationality")
             if await captcha(page):
@@ -142,6 +166,7 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
                 ok("office selection page reached: there may be availability")
             else:
                 fail("unknown page. Check the last screenshot in ./debug and send it to Claude.")
+                await dump_elements(page)
             print("\nStopped before choosing an office or booking. Nothing was booked.")
         except Exception as e:
             fail(f"{type(e).__name__}: {e}")
