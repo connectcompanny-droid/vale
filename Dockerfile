@@ -5,7 +5,9 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=Europe/Madrid
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    # Real Google Chrome: its certificate root store stays current, unlike the frozen bundled Chromium.
+    && playwright install --with-deps chrome
 
 COPY app ./app
 COPY worker.py .

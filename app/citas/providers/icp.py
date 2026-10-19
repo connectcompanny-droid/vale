@@ -63,6 +63,22 @@ TEXT = {
 }
 
 
+TLS_ERRORS = ("ERR_CERT_", "ERR_SSL_", "SSL_ERROR", "SEC_ERROR_")
+
+
+def classify_error(e: Exception) -> str:
+    """Short reason for logs/audit. Certificate problems get their own class so the monitor can
+    pause instead of retrying: an untrusted certificate may mean the connection is intercepted."""
+    msg = str(e)
+    if any(code in msg for code in TLS_ERRORS):
+        return "tls_untrusted"
+    if "Timeout" in type(e).__name__ or "Timeout" in msg:
+        return "timeout"
+    if "ERR_" in msg:
+        return "network"
+    return type(e).__name__
+
+
 def _nie_like(value: str) -> bool:
     v = value.upper().replace("-", "")
     return len(v) == 9 and v[0] in "XYZ" and v[1:8].isdigit()
@@ -83,7 +99,16 @@ class ICPProvider(CitaProvider):
     async def _ensure_browser(self) -> Browser:
         if self._browser is None:
             self._pw = await async_playwright().start()
-            self._browser = await self._pw.chromium.launch(headless=get_settings().headless)
+            s = get_settings()
+            # Real Chrome when available: up-to-date root store. TLS errors are NEVER ignored:
+            # personal data goes through this connection.
+            try:
+                self._browser = await self._pw.chromium.launch(headless=s.headless, channel=s.browser_channel or None)
+            except Exception as e:
+                if not s.browser_channel:
+                    raise
+                log.warning("browser channel %r unavailable (%s); using bundled Chromium", s.browser_channel, e)
+                self._browser = await self._pw.chromium.launch(headless=s.headless)
         return self._browser
 
     async def _new_page(self) -> tuple[BrowserContext, Page]:
@@ -235,7 +260,7 @@ class ICPProvider(CitaProvider):
             return CheckResult("slots", slots=slots, hold_key=key)
         except Exception as e:  # network, layout change, timeout
             log.warning("check failed for request %s: %s", request_id, e)
-            return CheckResult("error", reason=type(e).__name__)
+            return CheckResult("error", reason=classify_error(e))
         finally:
             if not keep:
                 await ctx.close()
@@ -267,7 +292,7 @@ class ICPProvider(CitaProvider):
             return BookResult("booked", reference=ref_line.strip()[:120] or None)
         except Exception as e:
             log.warning("booking failed for request %s: %s", request_id, e)
-            return BookResult("error", reason=type(e).__name__)
+            return BookResult("error", reason=classify_error(e))
         finally:
             await ctx.close()
 

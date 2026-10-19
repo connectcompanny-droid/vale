@@ -130,7 +130,12 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
     tramite = TRAMITES[tramite_code]
     print(f"\nProvince: {PROVINCES[province]} | Trámite: {tramite.label['pt']} | Mode: {'availability check' if check else 'menu only'}\n")
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=False, slow_mo=500)
+        try:
+            browser = await pw.chromium.launch(headless=False, slow_mo=500, channel="chrome")
+            print("Browser: your installed Google Chrome")
+        except Exception:
+            browser = await pw.chromium.launch(headless=False, slow_mo=500)
+            print("Browser: Playwright's bundled Chromium (Google Chrome not found)")
         ctx = await browser.new_context(locale="es-ES", timezone_id="Europe/Madrid", viewport={"width": 1280, "height": 900})
         page = await ctx.new_page()
         page.set_default_timeout(30_000)
@@ -216,8 +221,23 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
                 await dump_elements(page)
             print("\nStopped before choosing an office or booking. Nothing was booked.")
         except Exception as e:
-            fail(f"{type(e).__name__}: {e}")
-            await snap(page, "error")
+            from app.citas.providers.icp import classify_error
+
+            fail(f"{type(e).__name__}: {str(e).splitlines()[0]}")
+            if classify_error(e) == "tls_untrusted":
+                print("""
+  The site's security certificate was NOT trusted, so nothing was sent. This is a safety stop:
+  Vale never ignores certificate errors because passport data goes through this connection.
+  Check, in this order:
+    1. Open https://icp.administracionelectronica.gob.es/icpplus/index.html in your normal Chrome.
+       - Same warning there too? Your network or antivirus is intercepting HTTPS (e.g. "HTTPS scanning",
+         "web shield"), or the government server is misconfigured. Try another network (phone hotspot).
+       - Normal Chrome is fine? Run this script again: it now uses your installed Chrome.
+    2. If you use a VPN or a corporate proxy, try without it.""")
+            try:
+                await snap(page, "error")
+            except Exception:
+                pass
         finally:
             input("\nPress Enter to close the browser...")
             await browser.close()

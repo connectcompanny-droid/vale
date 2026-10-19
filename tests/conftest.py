@@ -82,6 +82,7 @@ async def fresh_db(tmp_path):
     router._seen.clear()
     set_synthesizer(NoSynthesizer())
     yield
+    await db.dispose()
 
 
 @pytest.fixture

@@ -21,6 +21,11 @@ def init_engine(url: str | None = None) -> None:
     _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
 
 
+async def dispose() -> None:
+    if _engine is not None:
+        await _engine.dispose()
+
+
 async def create_all() -> None:
     from app import models  # noqa: F401  (register tables)
 

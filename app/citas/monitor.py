@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +22,18 @@ class Monitor:
     def __init__(self, provider: CitaProvider):
         self.provider = provider
         self.sem = asyncio.Semaphore(get_settings().monitor_max_concurrency)
+        self.paused_until: datetime | None = None
+
+    def _pause_for_tls(self, request_id: int) -> None:
+        """Untrusted certificate: stop ALL checks for a while. Retrying would send personal data
+        over a connection we can't trust, and hammering a broken site helps nobody."""
+        minutes = get_settings().tls_pause_minutes
+        self.paused_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+        log.error("ALERT tls_untrusted on request %s: checks paused for %s min. Check the server's "
+                  "network/antivirus/proxy and the browser channel; never disable TLS verification.", request_id, minutes)
+
+    def paused(self) -> bool:
+        return self.paused_until is not None and datetime.now(timezone.utc) < self.paused_until
 
     async def run_forever(self) -> None:
         log.info("monitor started")
@@ -36,6 +49,8 @@ class Monitor:
 
     async def tick(self) -> None:
         await self.expire_offers()
+        if self.paused():
+            return
         await self.book_approved()
         async with session_scope() as s:
             due = [r.id for r in await service.due_for_check(s, get_settings().monitor_max_concurrency)]
@@ -67,6 +82,8 @@ class Monitor:
                         await self.provider.release(result.hold_key)
                     return
                 await service.mark_checked(s, req, result.status if not result.reason else f"{result.status}:{result.reason}")
+                if result.reason == "tls_untrusted":
+                    self._pause_for_tls(request_id)
                 if result.status == "slots" and result.slots:
                     slot = result.slots[0]
                     offer = await service.create_offer(s, req, slot.office, slot.starts_at, {**slot.raw, "hold_key": result.hold_key})
@@ -90,6 +107,10 @@ class Monitor:
                 if result.status == "booked":
                     await service.mark_booked(s, req, result.reference)
                     await get_channel().send_text(phone, t("booked", lang, office=office, starts_at=starts_at, reference=result.reference or ""))
+                elif result.reason == "tls_untrusted":
+                    # Approved offer stays approved; booking is retried after the pause.
+                    self._pause_for_tls(request_id)
+                    continue
                 elif result.status == "slot_gone":
                     req.state = RequestState.monitoring
                     await get_channel().send_text(phone, t("offer_expired", lang))

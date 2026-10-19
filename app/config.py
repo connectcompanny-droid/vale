@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     monitor_max_concurrency: int = 2
     offer_ttl_minutes: int = 10
     headless: bool = True
+    # "chrome" = real Google Chrome (current certificate root store, auto-updated). Empty = Playwright's
+    # bundled Chromium, whose root store is frozen at its build date and can reject valid certificates.
+    browser_channel: str = "chrome"
+    # Pause all checks for this long after an untrusted-certificate error (never bypass TLS).
+    tls_pause_minutes: int = 30
 
 
 @lru_cache
