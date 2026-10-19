@@ -184,19 +184,34 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
                 return
             await click(await root(page), "send")
             await snap(page, "after-data")
-            await click(await root(page), "send")  # "Solicitar cita"
-            await page.wait_for_timeout(2500)
-            await snap(page, "availability")
 
-            print("5) Result")
-            body = (await (await root(page)).inner_text("body")).lower()
-            if TEXT["no_slots"] in body:
+            print("5) Moving through intermediate pages (never books)")
+            result = None
+            for i in range(4):
+                f = await root(page)
+                body = (await f.inner_text("body")).lower()
+                if TEXT["no_slots"] in body:
+                    result = "no_slots"
+                    break
+                if await captcha(f):
+                    result = "captcha"
+                    break
+                if await f.locator(SEL["office"]).count() or await f.locator(SEL["slot_radio"]).count() or await f.locator(SEL["phone"]).count():
+                    result = "availability_form"
+                    break
+                ok(f"page {page.url.split('/')[-1]}: no result yet, advancing")
+                if not await click(f, "advance"):
+                    break
+                await page.wait_for_timeout(2500)
+                await snap(page, f"step-{i + 1}")
+
+            print("6) Result")
+            if result == "no_slots":
                 ok("site says there are no slots right now (detected correctly)")
-            elif await captcha(await root(page)):
-                pass
-            elif await (await root(page)).locator(SEL["office"]).count():
-                ok("office selection page reached: there may be availability")
-            else:
+            elif result == "availability_form":
+                ok("reached office/contact/slot page: there may be availability")
+                await dump_elements(page)
+            elif result != "captcha":
                 fail("unknown page. Check the last screenshot in ./debug and send it to Claude.")
                 await dump_elements(page)
             print("\nStopped before choosing an office or booking. Nothing was booked.")

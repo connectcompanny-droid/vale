@@ -43,6 +43,9 @@ SEL = {
     "name": "#txtDesCitado, input[name='txtDesCitado']",
     "country": "#txtPaisNac, select[name='txtPaisNac']",
     "send": "#btnEnviar, input[value*='Enviar' i], input[value*='Solicitar' i], button:has-text('Solicitar')",
+    # Buttons that only move through intermediate pages (info pages after the data form).
+    # Never includes booking/confirm buttons.
+    "advance": "#btnSubmit, #btnEnviar, input[value*='Solicitar' i], button:has-text('Solicitar')",
     "office": "#idSede, select[name='idSede']",
     "next": "#btnSiguiente, input[value='Siguiente'], button:has-text('Siguiente')",
     "phone": "#txtTelefonoCitado, input[name='txtTelefonoCitado']",
@@ -175,14 +178,21 @@ class ICPProvider(CitaProvider):
             return CheckResult("needs_human", reason="captcha")
         await (await self._f(page)).locator(SEL["send"]).first.click()
         await _pause()
-        await (await self._f(page)).locator(SEL["send"]).first.click()  # "Solicitar cita"
-        await _pause(1.5, 3.0)
-
-        body = (await (await self._f(page)).inner_text("body")).lower()
-        if TEXT["no_slots"] in body:
-            return CheckResult("no_slots")
-        if await self._captcha(page):
-            return CheckResult("needs_human", reason="captcha")
+        # Walk through intermediate pages ("infogenerica", "Solicitar cita") until a result shows.
+        for _ in range(4):
+            frame = await self._f(page)
+            body = (await frame.inner_text("body")).lower()
+            if TEXT["no_slots"] in body:
+                return CheckResult("no_slots")
+            if await self._captcha(page):
+                return CheckResult("needs_human", reason="captcha")
+            if await frame.locator(SEL["office"]).count() or await frame.locator(SEL["slot_radio"]).count() or await frame.locator(SEL["phone"]).count():
+                break
+            nxt = frame.locator(SEL["advance"]).first
+            if not await nxt.count():
+                return CheckResult("error", reason="stuck_after_data_form")
+            await nxt.click()
+            await _pause(1.5, 3.0)
 
         if await (await self._f(page)).locator(SEL["office"]).count():
             # First office with availability; a later version can honour user preferences.
