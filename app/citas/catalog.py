@@ -46,6 +46,7 @@ TRAMITES: dict[str, Tramite] = {
 
 # Launch provinces (see the go-to-market plan): start narrow, expand after validation.
 PROVINCES: dict[str, str] = {
+    "granada": "Granada",
     "madrid": "Madrid",
     "barcelona": "Barcelona",
 }
