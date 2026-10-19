@@ -68,6 +68,11 @@ TOOLS = [
         },
     },
     {
+        "name": "set_reply_mode",
+        "description": "Change how Vale answers when the user asks: 'audio' (always voice notes), 'text' (never voice), 'mirror' (voice only when they send voice).",
+        "input_schema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["audio", "text", "mirror"]}}, "required": ["mode"]},
+    },
+    {
         "name": "request_data_deletion",
         "description": "Ask the user to confirm deletion of all their data (sends a confirmation button).",
         "input_schema": {"type": "object", "properties": {}},
@@ -111,6 +116,12 @@ class Agent:
                     return {"error": "not_available"}
                 await on_data({k: v for k, v in args.items() if v})
                 return {"readback_sent": True}
+            if name == "set_reply_mode":
+                mode = args.get("mode")
+                if mode not in ("audio", "text", "mirror"):
+                    return {"error": "invalid_mode"}
+                user.reply_mode = mode
+                return {"reply_mode": mode}
             if name == "request_data_deletion":
                 await on_delete()
                 return {"confirmation_sent": True}

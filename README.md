@@ -28,6 +28,7 @@ worker.py ── app/citas/monitor.py ── provider ICP (Playwright) ── si
    - **Áudio**: a nota de voz é transcrita (`app/documents/transcriber.py`), o Vale mostra *"🎙️ Entendi assim: …"* e segue como texto.
 
    Em todos os casos o Vale devolve os dados lidos com os botões **Está certo / Corrigir**. Os dados ficam **pendentes** e não são usados até o "Está certo". Na correção, basta dizer o campo errado (por texto ou áudio); o resto é mantido. Fotos e áudios nunca são salvos; só os campos, criptografados (Fernet).
+   **Respostas em áudio (opcional).** Com `TTS_PROVIDER` configurado, o Vale também responde com nota de voz. Por padrão ele espelha o cliente: áudio recebe áudio, texto recebe texto. O cliente pode pedir "responde sempre em áudio" ou "só texto". Confirmações de dados, ofertas de vaga e textos legais continuam sempre em texto com botões, porque a grafia exata precisa ser lida. Se a voz falhar, a mensagem vai em texto.
 3. **Pedido de cita.** O agente pergunta a província e o trâmite e abre o pedido. Fica `awaiting_documents` até ter os dados necessários e depois passa para `monitoring`.
 4. **Monitor.** O worker verifica o site oficial em intervalos educados (mínimo de 10 min por pedido, concorrência limitada).
 5. **Oferta com aprovação.** Quando acha vaga, mantém a sessão do navegador aberta e manda os botões **Confirmar / Não quero**. A vaga fica reservada para o usuário por 10 min.
@@ -61,6 +62,7 @@ com saídas para `needs_human`, `cancelled` e `failed`.
 | `app/citas/service.py` | Regras de negócio e auditoria |
 | `app/citas/monitor.py` | Worker: verifica, oferece, reserva, expira |
 | `app/citas/providers/icp.py` | Automação do site oficial de cita previa |
+| `app/voice/tts.py` | Voz plugável: `none`, `elevenlabs`, `openai`; para outro serviço, uma classe `Synthesizer` nova |
 | `app/i18n.py` | Mensagens fixas em PT, ES e EN |
 
 ## Rodando

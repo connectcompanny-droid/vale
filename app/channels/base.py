@@ -39,5 +39,9 @@ class Channel(ABC):
     async def send_buttons(self, phone: str, text: str, buttons: list[Button]) -> None: ...
 
     @abstractmethod
+    async def send_audio(self, phone: str, audio: bytes, mime: str) -> None:
+        """Send a voice note."""
+
+    @abstractmethod
     async def download_media(self, message: IncomingMessage) -> tuple[bytes, str]:
         """Return (bytes, mime type) for an incoming image/document."""

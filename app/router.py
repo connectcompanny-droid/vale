@@ -16,6 +16,7 @@ from app.db import session_scope
 from app.documents.extractor import extract_document
 from app.documents.transcriber import TranscriptionError, transcribe
 from app.i18n import MESSAGES, format_fields, guess_lang, t
+from app.voice.tts import SynthesisError, get_synthesizer
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,8 @@ async def handle(msg: IncomingMessage) -> None:
             # 1) Consent gate: nothing is processed before an explicit yes.
             if button == "consent:yes":
                 await service.give_consent(s, user)
-                await ch.send_text(msg.phone, await _get_agent().reply(s, user, "(the user just accepted the privacy terms; greet and ask what they need)", lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text")))
+                reply = await _get_agent().reply(s, user, "(the user just accepted the privacy terms; greet and ask what they need)", lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text"))
+                await _deliver(s, user, msg.phone, reply, client_spoke=False)
                 return
             if button == "consent:no":
                 await service.delete_user_data(s, user)
@@ -145,7 +147,7 @@ async def handle(msg: IncomingMessage) -> None:
             if text:
                 reply = await _get_agent().reply(s, user, text, lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, source))
                 if reply:
-                    await ch.send_text(msg.phone, reply)
+                    await _deliver(s, user, msg.phone, reply, client_spoke=source == "audio")
     except Exception:
         log.exception("failed to handle message %s", msg.message_id)
         try:
@@ -158,6 +160,32 @@ async def _ask_delete(phone: str, lang: str) -> None:
     await get_channel().send_buttons(phone, t("delete_confirm", lang), [
         Button("delete:yes", t("delete_yes", lang)), Button("delete:no", t("delete_no", lang)),
     ])
+
+
+def _should_speak(user, client_spoke: bool, text: str) -> bool:
+    from app.config import get_settings
+
+    if not get_synthesizer().enabled or len(text) > get_settings().tts_max_chars:
+        return False
+    mode = getattr(user, "reply_mode", "mirror") or "mirror"
+    return mode == "audio" or (mode == "mirror" and client_spoke)
+
+
+async def _deliver(s, user, phone: str, text: str, client_spoke: bool) -> None:
+    """Send a conversational reply as a voice note when appropriate, otherwise as text.
+    Read-backs, offers and legal texts never go through here: they stay as text with buttons."""
+    if not text:
+        return
+    ch = get_channel()
+    if _should_speak(user, client_spoke, text):
+        try:
+            audio, mime = await get_synthesizer().synthesize(text, user.lang)
+            await ch.send_audio(phone, audio, mime)
+            audit.record(s, "voice_reply_sent", user.id, chars=len(text))
+            return
+        except (SynthesisError, Exception) as e:  # never lose the message because of TTS
+            log.warning("voice reply failed, falling back to text: %s", e)
+    await ch.send_text(phone, text)
 
 
 def _data_hook(s, user, phone: str, source: str):

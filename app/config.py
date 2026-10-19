@@ -21,6 +21,17 @@ class Settings(BaseSettings):
     stt_api_key: str = ""
     stt_model: str = "whisper-1"
 
+    # Text-to-speech for voice replies: none | elevenlabs | openai (see app/voice/tts.py).
+    tts_provider: str = "none"
+    tts_api_url: str = "https://api.openai.com/v1/audio/speech"
+    tts_api_key: str = ""
+    tts_model: str = ""
+    tts_voice_pt: str = ""
+    tts_voice_es: str = ""
+    tts_voice_en: str = ""
+    # Longest reply sent as audio; longer ones go as text (voice notes > ~1 min get skipped).
+    tts_max_chars: int = 600
+
     monitor_min_interval_minutes: int = 10
     monitor_max_concurrency: int = 2
     offer_ttl_minutes: int = 10

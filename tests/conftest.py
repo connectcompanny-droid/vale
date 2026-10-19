@@ -28,6 +28,9 @@ class FakeChannel(Channel):
     async def send_buttons(self, phone, text, buttons):
         self.sent.append((phone, text, buttons))
 
+    async def send_audio(self, phone, audio, mime):
+        self.sent.append((phone, f"<audio {mime} {len(audio)}b>", []))
+
     async def download_media(self, message):
         return self.media
 
@@ -72,9 +75,12 @@ class FakeProvider(CitaProvider):
 
 @pytest_asyncio.fixture(autouse=True)
 async def fresh_db(tmp_path):
+    from app.voice.tts import NoSynthesizer, set_synthesizer
+
     db.init_engine(f"sqlite+aiosqlite:///{tmp_path}/t.db")
     await db.create_all()
     router._seen.clear()
+    set_synthesizer(NoSynthesizer())
     yield
 
 

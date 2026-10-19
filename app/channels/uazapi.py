@@ -74,6 +74,13 @@ class UazapiChannel(Channel):
                 lines = "\n".join(f"{i + 1}. {b.label}" for i, b in enumerate(buttons))
                 await self.send_text(phone, f"{text}\n\n{lines}")
 
+    async def send_audio(self, phone: str, audio: bytes, mime: str) -> None:
+        # "ptt" shows as a recorded voice note in WhatsApp.
+        data_uri = f"data:{mime};base64,{base64.b64encode(audio).decode()}"
+        async with self._client() as c:
+            r = await c.post("/send/media", json={"number": phone, "type": "ptt", "file": data_uri})
+            r.raise_for_status()
+
     async def download_media(self, message: IncomingMessage) -> tuple[bytes, str]:
         async with self._client() as c:
             r = await c.post("/message/download", json={"id": message.message_id, "return_base64": True})

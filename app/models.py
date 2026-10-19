@@ -51,6 +51,8 @@ class User(Base):
     phone: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(120))
     lang: Mapped[str] = mapped_column(String(5), default="pt")
+    # How Vale answers: "mirror" (voice when the client sent voice), "audio" (always), "text" (never voice).
+    reply_mode: Mapped[str] = mapped_column(String(8), default="mirror")
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # Short rolling transcript for the agent (plain text only, no document data).
