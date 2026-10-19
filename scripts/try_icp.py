@@ -39,20 +39,47 @@ def fail(msg: str) -> None:
     print(f"  FAIL  {msg}")
 
 
+async def root(page: Page, timeout_s: float = 20.0):
+    """The frame that holds the form. The ICP page may render its form late or inside an iframe."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    while True:
+        for frame in page.frames:
+            try:
+                if await frame.locator("select, input[type='submit'], input[type='button'], button").count():
+                    return frame
+            except Exception:
+                pass
+        if loop.time() > deadline:
+            return page.main_frame
+        await asyncio.sleep(0.5)
+
+
 async def dump_elements(page: Page) -> None:
-    """Print the real ids/names of every form control, so the selectors can be fixed."""
-    items = await page.evaluate(
-        """() => [...document.querySelectorAll('select, input, button, a.btn, iframe')].map(e => ({
-            tag: e.tagName.toLowerCase(), type: e.type || '', id: e.id || '', name: e.getAttribute('name') || '',
-            value: (e.value || '').slice(0, 40), text: (e.innerText || '').trim().slice(0, 40),
-            src: (e.src || '').slice(0, 60), visible: !!(e.offsetWidth || e.offsetHeight) }))"""
-    )
+    """Print the real ids/names of every form control in every frame, so the selectors can be fixed."""
+    js = """() => [...document.querySelectorAll('select, input, button, a.btn, iframe')].map(e => ({
+        tag: e.tagName.toLowerCase(), type: e.type || '', id: e.id || '', name: e.getAttribute('name') || '',
+        value: (e.value || '').slice(0, 40), text: (e.innerText || '').trim().slice(0, 40),
+        src: (e.src || '').slice(0, 80), visible: !!(e.offsetWidth || e.offsetHeight) }))"""
+    lines = [f"frames on page: {len(page.frames)}"]
+    for i, frame in enumerate(page.frames):
+        lines.append(f"--- frame {i}: {frame.url[:100]}")
+        try:
+            for e in await frame.evaluate(js):
+                lines.append(f"{e['tag']:7} type={e['type']:9} id={e['id']!r:28} name={e['name']!r:24} value={e['value']!r:22} text={e['text']!r} {'src=' + e['src'] if e['src'] else ''} {'' if e['visible'] else '(hidden)'}")
+        except Exception as ex:
+            lines.append(f"(could not read frame: {type(ex).__name__})")
+    try:
+        html = await page.content()
+        lines.append(f"--- main html length: {len(html)}; first 600 chars:")
+        lines.append(html[:600])
+    except Exception:
+        pass
     DEBUG.mkdir(exist_ok=True)
-    lines = [f"{i['tag']:7} type={i['type']:9} id={i['id']!r:28} name={i['name']!r:24} value={i['value']!r:22} text={i['text']!r} {'src=' + i['src'] if i['src'] else ''} {'' if i['visible'] else '(hidden)'}" for i in items]
     out = DEBUG / f"{step_no:02d}-elements.txt"
     out.write_text("\n".join(lines), encoding="utf-8")
-    print(f"        Elements on this page (also saved to {out}):")
-    for ln in lines:
+    print(f"        Diagnostics (also saved to {out}):")
+    for ln in lines[:60]:
         if "(hidden)" not in ln:
             print(f"          {ln}")
 
@@ -61,7 +88,7 @@ async def pick(page: Page, selector: str, predicate, what: str) -> bool:
     select = page.locator(selector).first
     if not await select.count():
         fail(f"{what}: selector {selector!r} not found on the page")
-        await dump_elements(page)
+        await dump_elements(page.page)
         return False
     texts = []
     for opt in await select.locator("option").all():
@@ -82,7 +109,7 @@ async def click(page: Page, key: str) -> bool:
     btn = page.locator(sel).first
     if not await btn.count():
         fail(f"button {key}: selector {sel!r} not found")
-        await dump_elements(page)
+        await dump_elements(page.page)
         return False
     await btn.click()
     await page.wait_for_load_state("domcontentloaded")
@@ -108,32 +135,33 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
         try:
             print("1) Home page")
             await page.goto(BASE_URL)
+            await page.wait_for_load_state("networkidle")
             await snap(page, "home")
-            if not await pick(page, SEL["province"], lambda t: PROVINCES[province].lower() in t.lower(), "province"):
+            if not await pick(await root(page), SEL["province"], lambda t: PROVINCES[province].lower() in t.lower(), "province"):
                 return
-            if not await click(page, "accept"):
+            if not await click(await root(page), "accept"):
                 return
             await snap(page, "province-chosen")
 
             print("2) Trámite")
-            if not await pick(page, SEL["tramite"], lambda t: label_matches(tramite, t), "trámite"):
+            if not await pick(await root(page), SEL["tramite"], lambda t: label_matches(tramite, t), "trámite"):
                 return
-            if not await click(page, "accept"):
+            if not await click(await root(page), "accept"):
                 return
             await snap(page, "tramite-chosen")
 
             print("3) Information page")
-            if not await click(page, "enter"):
+            if not await click(await root(page), "enter"):
                 return
             await snap(page, "data-form")
             missing = False
             for key in ("doc_passport", "doc_nie", "doc_number", "name", "country", "send"):
-                present = await page.locator(SEL[key]).count() > 0
+                present = await (await root(page)).locator(SEL[key]).count() > 0
                 missing |= not present
                 (ok if present else fail)(f"field {key}: {'found' if present else 'NOT found'}")
             if missing:
                 await dump_elements(page)
-            if await captcha(page):
+            if await captcha(await root(page)):
                 return
             if not check:
                 print("\nMenu-only mode finished. Nothing was submitted.")
@@ -143,26 +171,26 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
             number = input("     Passport or NIE number: ").strip()
             name = input("     Full name as on the document: ").strip().upper()
             country = input("     Nationality in Spanish (e.g. BRASIL): ").strip().upper()
-            await page.locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
-            await page.locator(SEL["doc_number"]).first.fill(number)
-            await page.locator(SEL["name"]).first.fill(name)
-            if await page.locator(SEL["country"]).count():
-                await pick(page, SEL["country"], lambda t: country in t.upper(), "nationality")
-            if await captcha(page):
+            await (await root(page)).locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
+            await (await root(page)).locator(SEL["doc_number"]).first.fill(number)
+            await (await root(page)).locator(SEL["name"]).first.fill(name)
+            if await (await root(page)).locator(SEL["country"]).count():
+                await pick(await root(page), SEL["country"], lambda t: country in t.upper(), "nationality")
+            if await captcha(await root(page)):
                 return
-            await click(page, "send")
+            await click(await root(page), "send")
             await snap(page, "after-data")
-            await click(page, "send")  # "Solicitar cita"
+            await click(await root(page), "send")  # "Solicitar cita"
             await page.wait_for_timeout(2500)
             await snap(page, "availability")
 
             print("5) Result")
-            body = (await page.inner_text("body")).lower()
+            body = (await (await root(page)).inner_text("body")).lower()
             if TEXT["no_slots"] in body:
                 ok("site says there are no slots right now (detected correctly)")
-            elif await captcha(page):
+            elif await captcha(await root(page)):
                 pass
-            elif await page.locator(SEL["office"]).count():
+            elif await (await root(page)).locator(SEL["office"]).count():
                 ok("office selection page reached: there may be availability")
             else:
                 fail("unknown page. Check the last screenshot in ./debug and send it to Claude.")

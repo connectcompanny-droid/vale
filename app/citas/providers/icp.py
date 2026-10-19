@@ -86,8 +86,23 @@ class ICPProvider(CitaProvider):
         page.set_default_timeout(30_000)
         return ctx, page
 
+    async def _f(self, page: Page, timeout_s: float = 20.0):
+        """Frame holding the form: the ICP page may render late or inside an iframe."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while True:
+            for frame in page.frames:
+                try:
+                    if await frame.locator("select, input[type='submit'], input[type='button'], button").count():
+                        return frame
+                except Exception:
+                    pass
+            if loop.time() > deadline:
+                return page.main_frame
+            await asyncio.sleep(0.5)
+
     async def _captcha(self, page: Page) -> bool:
-        return await page.locator(SEL["captcha"]).count() > 0
+        return any([await fr.locator(SEL["captcha"]).count() > 0 for fr in page.frames])
 
     async def _select_by_text(self, page: Page, selector: str, predicate) -> bool:
         select = page.locator(selector).first
@@ -104,57 +119,58 @@ class ICPProvider(CitaProvider):
         """Walk the form up to the slot list. Returns a CheckResult to stop early, or None when slots are on screen."""
         tramite = TRAMITES[tramite_code]
         await page.goto(BASE_URL)
+        await page.wait_for_load_state("networkidle")
         await _pause()
-        if not await self._select_by_text(page, SEL["province"], lambda t: PROVINCES[province].lower() in t.lower()):
+        if not await self._select_by_text(await self._f(page), SEL["province"], lambda t: PROVINCES[province].lower() in t.lower()):
             return CheckResult("error", reason="province_option_not_found")
-        await page.locator(SEL["accept"]).first.click()
+        await (await self._f(page)).locator(SEL["accept"]).first.click()
         await _pause()
-        if not await self._select_by_text(page, SEL["tramite"], lambda t: label_matches(tramite, t)):
+        if not await self._select_by_text(await self._f(page), SEL["tramite"], lambda t: label_matches(tramite, t)):
             return CheckResult("error", reason="tramite_option_not_found")
-        await page.locator(SEL["accept"]).first.click()
+        await (await self._f(page)).locator(SEL["accept"]).first.click()
         await _pause()
-        await page.locator(SEL["enter"]).first.click()
+        await (await self._f(page)).locator(SEL["enter"]).first.click()
         await _pause()
 
         number = str(profile.get("nie") or profile.get("document_number") or "")
-        await page.locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
-        await page.locator(SEL["doc_number"]).first.fill(number)
-        await page.locator(SEL["name"]).first.fill(str(profile.get("full_name", "")).upper())
-        if await page.locator(SEL["country"]).count():
-            await self._select_by_text(page, SEL["country"], lambda t: str(profile.get("nationality", "")).upper() in t.upper())
+        await (await self._f(page)).locator(SEL["doc_nie"] if _nie_like(number) else SEL["doc_passport"]).first.check()
+        await (await self._f(page)).locator(SEL["doc_number"]).first.fill(number)
+        await (await self._f(page)).locator(SEL["name"]).first.fill(str(profile.get("full_name", "")).upper())
+        if await (await self._f(page)).locator(SEL["country"]).count():
+            await self._select_by_text(await self._f(page), SEL["country"], lambda t: str(profile.get("nationality", "")).upper() in t.upper())
         if await self._captcha(page):
             return CheckResult("needs_human", reason="captcha")
-        await page.locator(SEL["send"]).first.click()
+        await (await self._f(page)).locator(SEL["send"]).first.click()
         await _pause()
-        await page.locator(SEL["send"]).first.click()  # "Solicitar cita"
+        await (await self._f(page)).locator(SEL["send"]).first.click()  # "Solicitar cita"
         await _pause(1.5, 3.0)
 
-        body = (await page.inner_text("body")).lower()
+        body = (await (await self._f(page)).inner_text("body")).lower()
         if TEXT["no_slots"] in body:
             return CheckResult("no_slots")
         if await self._captcha(page):
             return CheckResult("needs_human", reason="captcha")
 
-        if await page.locator(SEL["office"]).count():
+        if await (await self._f(page)).locator(SEL["office"]).count():
             # First office with availability; a later version can honour user preferences.
-            await page.locator(SEL["office"]).first.select_option(index=1)
-            await page.locator(SEL["next"]).first.click()
+            await (await self._f(page)).locator(SEL["office"]).first.select_option(index=1)
+            await (await self._f(page)).locator(SEL["next"]).first.click()
             await _pause()
-        if await page.locator(SEL["phone"]).count():
-            await page.locator(SEL["phone"]).first.fill(phone[-9:] if phone else "")
+        if await (await self._f(page)).locator(SEL["phone"]).count():
+            await (await self._f(page)).locator(SEL["phone"]).first.fill(phone[-9:] if phone else "")
             email = str(profile.get("email", ""))
-            if email and await page.locator(SEL["email1"]).count():
-                await page.locator(SEL["email1"]).first.fill(email)
-                await page.locator(SEL["email2"]).first.fill(email)
-            await page.locator(SEL["next"]).first.click()
+            if email and await (await self._f(page)).locator(SEL["email1"]).count():
+                await (await self._f(page)).locator(SEL["email1"]).first.fill(email)
+                await (await self._f(page)).locator(SEL["email2"]).first.fill(email)
+            await (await self._f(page)).locator(SEL["next"]).first.click()
             await _pause()
         return None
 
     async def _read_slots(self, page: Page) -> list[Slot]:
         slots = []
-        for radio in await page.locator(SEL["slot_radio"]).all():
+        for radio in await (await self._f(page)).locator(SEL["slot_radio"]).all():
             rid = await radio.get_attribute("id") or ""
-            label = page.locator(f"label[for='{rid}']") if rid else None
+            label = (await self._f(page)).locator(f"label[for='{rid}']") if rid else None
             text = (await label.inner_text()).strip() if label and await label.count() else ""
             slots.append(Slot(office=text.split("\n")[0][:200] or "Oficina de extranjería", starts_at=text[-40:] or "", raw={"radio_id": rid, "text": text}))
         return slots
@@ -188,20 +204,20 @@ class ICPProvider(CitaProvider):
         ctx, page = held
         try:
             rid = slot.raw.get("radio_id")
-            if not rid or not await page.locator(f"#{rid}").count():
+            if not rid or not await (await self._f(page)).locator(f"#{rid}").count():
                 return BookResult("slot_gone")
-            await page.check(f"#{rid}")
-            await page.locator(SEL["next"]).first.click()
+            await (await self._f(page)).locator(f"#{rid}").check()
+            await (await self._f(page)).locator(SEL["next"]).first.click()
             await _pause()
             if await self._captcha(page):
                 return BookResult("needs_human", reason="captcha")
-            if await page.locator(SEL["confirm_check"]).count():
-                await page.locator(SEL["confirm_check"]).first.check()
-            if await page.locator(SEL["send_email_check"]).count():
-                await page.locator(SEL["send_email_check"]).first.check()
-            await page.locator(SEL["confirm"]).first.click()
+            if await (await self._f(page)).locator(SEL["confirm_check"]).count():
+                await (await self._f(page)).locator(SEL["confirm_check"]).first.check()
+            if await (await self._f(page)).locator(SEL["send_email_check"]).count():
+                await (await self._f(page)).locator(SEL["send_email_check"]).first.check()
+            await (await self._f(page)).locator(SEL["confirm"]).first.click()
             await _pause(1.5, 3.0)
-            body = await page.inner_text("body")
+            body = await (await self._f(page)).inner_text("body")
             if TEXT["reference"] not in body.lower():
                 return BookResult("needs_human", reason="unexpected_confirmation_page")
             ref_line = next((ln for ln in body.splitlines() if TEXT["reference"] in ln.lower()), "")
