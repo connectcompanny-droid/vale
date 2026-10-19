@@ -58,6 +58,8 @@ SEL = {
     "captcha": "iframe[src*='recaptcha'], iframe[src*='hcaptcha'], #captcha",
 }
 TEXT = {
+    # Web application firewall page shown when the site refuses automated traffic.
+    "blocked": "the requested url was rejected",
     "no_slots": "no hay citas disponibles",
     "reference": "justificante",
 }
@@ -176,6 +178,12 @@ class ICPProvider(CitaProvider):
                 return True
         return False
 
+    async def _blocked(self, page: Page) -> bool:
+        try:
+            return TEXT["blocked"] in (await page.content()).lower()
+        except Exception:
+            return False
+
     async def _reach_slots(self, page: Page, province: str, tramite_code: str, profile: dict, phone: str = "") -> CheckResult | None:
         """Walk the form up to the slot list. Returns a CheckResult to stop early, or None when slots are on screen."""
         tramite = TRAMITES[tramite_code]
@@ -248,6 +256,8 @@ class ICPProvider(CitaProvider):
         keep = False
         try:
             early = await self._reach_slots(page, province, tramite_code, profile, profile.get("phone", ""))
+            if await self._blocked(page):
+                return CheckResult("error", reason="blocked_by_site")
             if early:
                 return early
             slots = await self._read_slots(page)
@@ -259,6 +269,8 @@ class ICPProvider(CitaProvider):
             keep = True
             return CheckResult("slots", slots=slots, hold_key=key)
         except Exception as e:  # network, layout change, timeout
+            if await self._blocked(page):
+                return CheckResult("error", reason="blocked_by_site")
             log.warning("check failed for request %s: %s", request_id, e)
             return CheckResult("error", reason=classify_error(e))
         finally:

@@ -24,6 +24,13 @@ class Monitor:
         self.sem = asyncio.Semaphore(get_settings().monitor_max_concurrency)
         self.paused_until: datetime | None = None
 
+    def _pause_for_block(self, request_id: int) -> None:
+        """The site's firewall rejected us. Respect it: stop everything for hours. Never retry
+        faster, rotate IPs or disguise the browser."""
+        minutes = get_settings().blocked_pause_minutes
+        self.paused_until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+        log.error("ALERT blocked_by_site on request %s: checks paused for %s min.", request_id, minutes)
+
     def _pause_for_tls(self, request_id: int) -> None:
         """Untrusted certificate: stop ALL checks for a while. Retrying would send personal data
         over a connection we can't trust, and hammering a broken site helps nobody."""
@@ -84,6 +91,8 @@ class Monitor:
                 await service.mark_checked(s, req, result.status if not result.reason else f"{result.status}:{result.reason}")
                 if result.reason == "tls_untrusted":
                     self._pause_for_tls(request_id)
+                elif result.reason == "blocked_by_site":
+                    self._pause_for_block(request_id)
                 if result.status == "slots" and result.slots:
                     slot = result.slots[0]
                     offer = await service.create_offer(s, req, slot.office, slot.starts_at, {**slot.raw, "hold_key": result.hold_key})

@@ -84,7 +84,17 @@ async def dump_elements(page: Page) -> None:
             print(f"          {ln}")
 
 
+BLOCK_MSG = """
+  STOP  The site's firewall rejected this session ("The requested URL was rejected").
+        This is the government's anti-automation protection. Do NOT retry now and do not
+        try to get around it (VPN, other networks, other browsers). Wait several hours.
+"""
+
+
 async def pick(page, selector: str, predicate, what: str) -> bool:
+    if "the requested url was rejected" in (await page.content()).lower():
+        print(BLOCK_MSG)
+        return False
     selects = await page.locator(selector).all()
     if not selects:
         fail(f"{what}: selector {selector!r} not found on the page")
@@ -107,6 +117,9 @@ async def pick(page, selector: str, predicate, what: str) -> bool:
 
 
 async def click(page: Page, key: str) -> bool:
+    if "the requested url was rejected" in (await page.content()).lower():
+        print(BLOCK_MSG)
+        return False
     sel = SEL[key]
     btn = page.locator(sel).first
     if not await btn.count():

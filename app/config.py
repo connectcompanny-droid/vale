@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     browser_channel: str = "chrome"
     # Pause all checks for this long after an untrusted-certificate error (never bypass TLS).
     tls_pause_minutes: int = 30
+    # Pause all checks for this long when the site's firewall rejects us ("Request Rejected").
+    # Vale never tries to evade it (no proxy rotation, no fingerprint spoofing).
+    blocked_pause_minutes: int = 360
 
 
 @lru_cache

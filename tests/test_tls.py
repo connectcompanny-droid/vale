@@ -51,3 +51,22 @@ async def test_untrusted_certificate_pauses_all_checks(channel, provider, make_m
     m.paused_until = datetime.now(timezone.utc) - timedelta(seconds=1)
     await m.tick()
     assert len(calls) == 2  # resumes after the pause
+
+
+@pytest.mark.asyncio
+async def test_firewall_block_pauses_for_hours(channel, provider, make_msg):
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    async with session_scope() as s:
+        user = await s.scalar(select(User))
+        doc = ExtractedDocument(document_kind="passport", full_name="A B", document_number="X1", nationality="BRASIL", confidence="high")
+        await service.confirm_pending(s, user, (await service.store_document(s, user, doc)).id)
+        await service.create_request(s, user, "granada", "nie")
+
+    async def check(*a):
+        return CheckResult("error", reason="blocked_by_site")
+
+    provider.check = check
+    m = Monitor(provider)
+    await m.tick()
+    assert m.paused() and m.paused_until - datetime.now(timezone.utc) > timedelta(hours=5)
