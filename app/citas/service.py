@@ -66,24 +66,67 @@ async def delete_user_data(session: AsyncSession, user: User) -> None:
 
 # ---------- documents / profile ----------
 
-async def store_document(session: AsyncSession, user: User, doc: ExtractedDocument) -> list[CitaRequest]:
-    """Encrypt and save the extracted fields; move requests whose data is now complete to monitoring."""
+PERSONAL_FIELDS = ("full_name", "document_number", "nie", "nationality", "birth_date", "expiry_date")
+
+
+async def save_pending_data(session: AsyncSession, user: User, fields: dict, source: str, kind: str = "typed") -> Document:
+    """Store data read from a photo, typed text or a voice note as PENDING. It is merged over the
+    current confirmed profile, so a correction only needs the field that changed."""
     if user.consent_at is None:
         raise RuleError("consent_required")
-    session.add(Document(user_id=user.id, kind=doc.document_kind, payload_encrypted=encrypt_json(doc.model_dump())))
+    clean = {k: (str(v).strip().upper() if k in ("full_name", "document_number", "nie", "nationality") else v)
+             for k, v in fields.items() if k in PERSONAL_FIELDS and v not in (None, "", [])}
+    if not clean:
+        raise RuleError("no_personal_data")
+    base = {k: v for k, v in (await get_profile(session, user.id)).items() if k in PERSONAL_FIELDS}
+    pending = await latest_pending(session, user.id)
+    if pending:
+        base.update({k: v for k, v in decrypt_json(pending.payload_encrypted).items() if k in PERSONAL_FIELDS})
+        await session.delete(pending)  # only one pending read-back at a time
+    base.update(clean)
+    doc = Document(user_id=user.id, kind=kind, source=source, confirmed=False, payload_encrypted=encrypt_json(base))
+    session.add(doc)
     await session.flush()
-    audit.record(session, "document_stored", user.id, kind=doc.document_kind, confidence=doc.confidence)
+    audit.record(session, "data_pending", user.id, source=source, fields=sorted(clean))
+    return doc
+
+
+async def store_document(session: AsyncSession, user: User, doc: ExtractedDocument) -> Document:
+    """A document photo becomes pending data awaiting the user's confirmation."""
+    return await save_pending_data(session, user, doc.model_dump(), source="photo", kind=doc.document_kind)
+
+
+async def latest_pending(session: AsyncSession, user_id: int) -> Document | None:
+    return await session.scalar(
+        select(Document).where(Document.user_id == user_id, Document.confirmed.is_(False))
+        .order_by(Document.created_at.desc(), Document.id.desc()).limit(1)
+    )
+
+
+def pending_fields(doc: Document) -> dict:
+    return decrypt_json(doc.payload_encrypted)
+
+
+async def confirm_pending(session: AsyncSession, user: User, doc_id: int) -> list[CitaRequest]:
+    doc = await session.get(Document, doc_id)
+    if not doc or doc.user_id != user.id or doc.confirmed:
+        raise RuleError("pending_data_not_found")
+    doc.confirmed = True
+    audit.record(session, "data_confirmed", user.id, source=doc.source)
+    await session.flush()
     return await promote_ready_requests(session, user)
 
 
 async def set_contact_email(session: AsyncSession, user: User, email: str) -> None:
-    session.add(Document(user_id=user.id, kind="contact", payload_encrypted=encrypt_json({"email": email})))
+    session.add(Document(user_id=user.id, kind="contact", source="contact", confirmed=True, payload_encrypted=encrypt_json({"email": email})))
     audit.record(session, "contact_email_set", user.id)
 
 
 async def get_profile(session: AsyncSession, user_id: int) -> dict:
-    """Merge all of the user's documents (newest wins) into one decrypted profile."""
-    docs = (await session.scalars(select(Document).where(Document.user_id == user_id).order_by(Document.created_at, Document.id))).all()
+    """Merge the user's CONFIRMED documents (newest wins) into one decrypted profile."""
+    docs = (await session.scalars(
+        select(Document).where(Document.user_id == user_id, Document.confirmed.is_(True)).order_by(Document.created_at, Document.id)
+    )).all()
     profile: dict = {}
     for d in docs:
         for k, v in decrypt_json(d.payload_encrypted).items():

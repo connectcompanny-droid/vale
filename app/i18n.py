@@ -76,12 +76,53 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Hecho. He borrado todos tus datos. Si me necesitas, escríbeme.",
         "en": "Done. I've deleted all your data. If you need me again, just write.",
     },
+    "readback": {
+        "pt": "Confere se está tudo certinho? Um erro numa letra pode fazer a cita não ser atendida.\n\n{fields}",
+        "es": "¿Está todo correcto? Un error en una letra puede hacer que no te atiendan.\n\n{fields}",
+        "en": "Is everything exactly right? One wrong letter can get the appointment refused.\n\n{fields}",
+    },
+    "readback_ok": {"pt": "Está certo", "es": "Está bien", "en": "It's right"},
+    "readback_fix": {"pt": "Corrigir", "es": "Corregir", "en": "Fix it"},
+    "fix_prompt": {
+        "pt": "Me diga o que está errado, por texto ou áudio. Ex.: \"o sobrenome é SOUZA com Z\".",
+        "es": "Dime qué está mal, por texto o audio. Ej.: \"el apellido es SOUZA con Z\".",
+        "en": "Tell me what's wrong, by text or voice note. E.g. \"the surname is SOUZA with a Z\".",
+    },
+    "data_saved": {
+        "pt": "Perfeito, dados confirmados ✓",
+        "es": "Perfecto, datos confirmados ✓",
+        "en": "Great, details confirmed ✓",
+    },
+    "transcript": {
+        "pt": "🎙️ Entendi assim: \"{text}\"",
+        "es": "🎙️ Te he entendido así: \"{text}\"",
+        "en": "🎙️ Here's what I heard: \"{text}\"",
+    },
+    "audio_failed": {
+        "pt": "Não consegui entender o áudio. Pode mandar de novo, falando mais perto do microfone, ou escrever?",
+        "es": "No he podido entender el audio. ¿Puedes mandarlo otra vez, más cerca del micrófono, o escribirlo?",
+        "en": "I couldn't make out the voice note. Could you send it again, closer to the mic, or type it?",
+    },
     "error": {
         "pt": "Tive um problema agora. Já estou olhando; tente de novo em instantes.",
         "es": "He tenido un problema. Ya lo estoy mirando; inténtalo en un momento.",
         "en": "I hit a problem. I'm on it; please try again shortly.",
     },
 }
+
+
+FIELD_NAMES = {
+    "full_name": {"pt": "👤 Nome", "es": "👤 Nombre", "en": "👤 Name"},
+    "document_number": {"pt": "🪪 Documento", "es": "🪪 Documento", "en": "🪪 Document"},
+    "nie": {"pt": "🔢 NIE", "es": "🔢 NIE", "en": "🔢 NIE"},
+    "nationality": {"pt": "🌍 Nacionalidade", "es": "🌍 Nacionalidad", "en": "🌍 Nationality"},
+    "birth_date": {"pt": "🎂 Nascimento", "es": "🎂 Nacimiento", "en": "🎂 Date of birth"},
+}
+
+
+def format_fields(fields: dict, lang: str) -> str:
+    rows = [f"{FIELD_NAMES[k].get(lang, FIELD_NAMES[k]['pt'])}: {fields[k]}" for k in FIELD_NAMES if fields.get(k)]
+    return "\n".join(rows)
 
 
 def t(key: str, lang: str, **kwargs) -> str:

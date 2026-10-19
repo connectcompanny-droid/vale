@@ -7,7 +7,7 @@ images are never stored: they are read once by the extractor and discarded.
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -65,7 +65,10 @@ class Document(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    kind: Mapped[str] = mapped_column(String(32))  # passport, nie_card, tie, other
+    kind: Mapped[str] = mapped_column(String(32))  # passport, nie_card, tie, other, typed, contact
+    source: Mapped[str] = mapped_column(String(16), default="photo")  # photo | text | audio | contact
+    # Data is only used for booking after the user taps "Está certo" on the read-back.
+    confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     payload_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

@@ -15,7 +15,11 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
-MEDIA_TYPES = {"image", "imageMessage", "document", "documentMessage"}
+MEDIA_KINDS = {
+    "image": "image", "imageMessage": "image",
+    "document": "document", "documentMessage": "document",
+    "audio": "audio", "audioMessage": "audio", "ptt": "audio", "myaudio": "audio",
+}
 
 
 def _digits(value: str) -> str:
@@ -48,7 +52,8 @@ class UazapiChannel(Channel):
             message_id=str(msg.get("messageid") or msg.get("id") or ""),
             text=raw_text.strip() if isinstance(raw_text, str) else "",
             button_id=button_id,
-            has_media=mtype in MEDIA_TYPES,
+            has_media=mtype in MEDIA_KINDS,
+            media_kind=MEDIA_KINDS.get(mtype),
             media_mime=msg.get("mimetype"),
             push_name=msg.get("senderName") or payload.get("chat", {}).get("name"),
             raw=payload,
@@ -77,5 +82,5 @@ class UazapiChannel(Channel):
         b64 = data.get("base64Data") or data.get("base64") or ""
         if "," in b64[:100]:
             b64 = b64.split(",", 1)[1]
-        mime = data.get("mimetype") or message.media_mime or "image/jpeg"
+        mime = data.get("mimetype") or message.media_mime or ("audio/ogg" if message.media_kind == "audio" else "image/jpeg")
         return base64.b64decode(b64), mime

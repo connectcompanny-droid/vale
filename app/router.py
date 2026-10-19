@@ -14,17 +14,12 @@ from app.citas import service
 from app.citas.catalog import TRAMITES, normalize
 from app.db import session_scope
 from app.documents.extractor import extract_document
-from app.i18n import MESSAGES, guess_lang, t
+from app.documents.transcriber import TranscriptionError, transcribe
+from app.i18n import MESSAGES, format_fields, guess_lang, t
 
 log = logging.getLogger(__name__)
 
 DELETE_WORDS = ("APAGA TUDO", "APAGAR TUDO", "APAGUE TUDO", "BORRALO TODO", "BORRAR TODO", "DELETE EVERYTHING", "DELETE MY DATA")
-FIELD_LABELS = {
-    "full_name": {"pt": "nome completo", "es": "nombre completo", "en": "full name"},
-    "document_number": {"pt": "número do documento", "es": "número de documento", "en": "document number"},
-    "nationality": {"pt": "nacionalidade", "es": "nacionalidad", "en": "nationality"},
-}
-
 _seen: OrderedDict[str, None] = OrderedDict()
 _agent: Agent | None = None
 
@@ -55,7 +50,8 @@ def _duplicate(message_id: str) -> bool:
 def _button_from_text(text: str) -> str | None:
     """Let users who can't see buttons answer by typing the label."""
     n = normalize(text).strip(" .!")
-    for key, payload in (("consent_yes", "consent:yes"), ("consent_no", "consent:no"), ("delete_yes", "delete:yes")):
+    for key, payload in (("consent_yes", "consent:yes"), ("consent_no", "consent:no"), ("delete_yes", "delete:yes"),
+                         ("readback_ok", "data:latest:ok"), ("readback_fix", "data:latest:fix")):
         if n in {normalize(v) for v in MESSAGES[key].values()}:
             return payload
     return None
@@ -74,7 +70,7 @@ async def handle(msg: IncomingMessage) -> None:
             # 1) Consent gate: nothing is processed before an explicit yes.
             if button == "consent:yes":
                 await service.give_consent(s, user)
-                await ch.send_text(msg.phone, await _get_agent().reply(s, user, "(the user just accepted the privacy terms; greet and ask what they need)", lambda: _ask_delete(msg.phone, lang)))
+                await ch.send_text(msg.phone, await _get_agent().reply(s, user, "(the user just accepted the privacy terms; greet and ask what they need)", lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text")))
                 return
             if button == "consent:no":
                 await service.delete_user_data(s, user)
@@ -98,7 +94,21 @@ async def handle(msg: IncomingMessage) -> None:
                 await _ask_delete(msg.phone, lang)
                 return
 
-            # 3) Offer approval: the only route to a booking.
+            # 3) Read-back of personal data: nothing is used until the user confirms it.
+            if button and button.startswith("data:"):
+                _, doc_id, action = button.split(":")
+                pending = await service.latest_pending(s, user.id)
+                if not pending or (doc_id != "latest" and int(doc_id) != pending.id):
+                    await ch.send_text(msg.phone, t("fix_prompt", lang) if action == "fix" else t("data_saved", lang))
+                    return
+                if action == "ok":
+                    promoted = await service.confirm_pending(s, user, pending.id)
+                    await ch.send_text(msg.phone, t("data_saved", lang) + _next_step(lang, promoted, await service.active_requests(s, user.id)))
+                else:
+                    await ch.send_text(msg.phone, t("fix_prompt", lang))
+                return
+
+            # 4) Offer approval: the only route to a booking.
             if button and button.startswith("offer:"):
                 _, offer_id, action = button.split(":")
                 try:
@@ -112,14 +122,28 @@ async def handle(msg: IncomingMessage) -> None:
                     await ch.send_text(msg.phone, t("offer_expired", lang))
                 return
 
-            # 4) Documents.
-            if msg.has_media:
+            # 5) Voice notes: transcribe, show the client what was understood, then treat it as text.
+            text, source = msg.text, "text"
+            if msg.has_media and msg.media_kind == "audio":
+                audio, mime = await ch.download_media(msg)
+                try:
+                    text = await transcribe(audio, mime, lang)
+                except TranscriptionError as e:
+                    audit.record(s, "audio_failed", user.id, reason=str(e))
+                    await ch.send_text(msg.phone, t("audio_failed", lang))
+                    return
+                finally:
+                    del audio  # never persisted
+                await ch.send_text(msg.phone, t("transcript", lang, text=text))
+                text, source = f"[voice note] {text}", "audio"
+            elif msg.has_media:
+                # 6) Document photos.
                 await _handle_document(s, user, msg)
                 return
 
-            # 5) Everything else: conversation.
-            if msg.text:
-                reply = await _get_agent().reply(s, user, msg.text, lambda: _ask_delete(msg.phone, lang))
+            # 7) Everything else: conversation (typed or spoken details go through submit_personal_data).
+            if text:
+                reply = await _get_agent().reply(s, user, text, lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, source))
                 if reply:
                     await ch.send_text(msg.phone, reply)
     except Exception:
@@ -136,6 +160,29 @@ async def _ask_delete(phone: str, lang: str) -> None:
     ])
 
 
+def _data_hook(s, user, phone: str, source: str):
+    async def on_data(fields: dict) -> None:
+        doc = await service.save_pending_data(s, user, fields, source=source)
+        await _send_readback(phone, user.lang, doc)
+    return on_data
+
+
+async def _send_readback(phone: str, lang: str, doc) -> None:
+    fields = service.pending_fields(doc)
+    await get_channel().send_buttons(phone, t("readback", lang, fields=format_fields(fields, lang)), [
+        Button(f"data:{doc.id}:ok", t("readback_ok", lang)), Button(f"data:{doc.id}:fix", t("readback_fix", lang)),
+    ])
+
+
+def _next_step(lang: str, promoted: list, actives: list) -> str:
+    if promoted:
+        names = ", ".join(TRAMITES[r.tramite_code].label[lang] for r in promoted)
+        return "\n" + {"pt": f"Já estou vigiando as vagas de: {names}.", "es": f"Ya vigilo los huecos de: {names}.", "en": f"Now watching slots for: {names}."}[lang]
+    if not actives:
+        return "\n" + {"pt": "Qual cita você precisa e em qual província?", "es": "¿Qué cita necesitas y en qué provincia?", "en": "Which appointment do you need, and in which province?"}[lang]
+    return ""
+
+
 async def _handle_document(s, user, msg: IncomingMessage) -> None:
     ch = get_channel()
     lang = user.lang
@@ -145,24 +192,12 @@ async def _handle_document(s, user, msg: IncomingMessage) -> None:
     if doc.document_kind == "unreadable" or doc.confidence == "low":
         audit.record(s, "document_unreadable", user.id, issues=doc.issues)
         await ch.send_text(msg.phone, {
-            "pt": "Não consegui ler bem esse documento. Mande uma foto nítida da página com a sua foto, sem reflexo e com os quatro cantos aparecendo.",
-            "es": "No he podido leer bien el documento. Mándame una foto nítida de la página con tu foto, sin reflejos y con las cuatro esquinas visibles.",
-            "en": "I couldn't read that document well. Send a sharp photo of the photo page, no glare, all four corners visible.",
+            "pt": "Não consegui ler bem esse documento. Mande uma foto nítida da página com a sua foto, sem reflexo e com os quatro cantos aparecendo. Se preferir, pode escrever ou mandar um áudio com os dados.",
+            "es": "No he podido leer bien el documento. Mándame una foto nítida de la página con tu foto, sin reflejos y con las cuatro esquinas visibles. Si prefieres, escríbeme o mándame un audio con los datos.",
+            "en": "I couldn't read that document well. Send a sharp photo of the photo page, no glare, all four corners visible. Or type your details, or send a voice note.",
         }[lang])
         return
-    promoted = await service.store_document(s, user, doc)
-    profile = await service.get_profile(s, user.id)
-    lines = [f"✓ {doc.full_name or ''}".strip(), f"{doc.document_number or ''} · {doc.nationality or ''}".strip(" ·")]
     if "expired" in doc.issues:
-        lines.append({"pt": "⚠️ Parece que este documento está vencido.", "es": "⚠️ Parece que este documento está caducado.", "en": "⚠️ This document looks expired."}[lang])
-    actives = await service.active_requests(s, user.id)
-    missing = sorted({f for r in actives for f in service.missing_fields(profile, r.tramite_code)})
-    if promoted:
-        names = ", ".join(TRAMITES[r.tramite_code].label[lang] for r in promoted)
-        lines.append({"pt": f"Pronto! Já estou vigiando as vagas de: {names}.", "es": f"¡Listo! Ya vigilo los huecos de: {names}.", "en": f"Done! Now watching slots for: {names}."}[lang])
-    elif missing:
-        fields = ", ".join(FIELD_LABELS[f][lang] for f in missing)
-        lines.append({"pt": f"Ainda falta: {fields}.", "es": f"Aún falta: {fields}.", "en": f"Still missing: {fields}."}[lang])
-    elif not actives:
-        lines.append({"pt": "Qual cita você precisa e em qual província?", "es": "¿Qué cita necesitas y en qué provincia?", "en": "Which appointment do you need, and in which province?"}[lang])
-    await ch.send_text(msg.phone, "\n".join(lines))
+        await ch.send_text(msg.phone, {"pt": "⚠️ Parece que este documento está vencido.", "es": "⚠️ Parece que este documento está caducado.", "en": "⚠️ This document looks expired."}[lang])
+    pending = await service.store_document(s, user, doc)
+    await _send_readback(msg.phone, lang, pending)

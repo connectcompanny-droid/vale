@@ -54,6 +54,12 @@ async def test_full_happy_path(channel, provider, make_msg):
 
     with patch("app.router.extract_document", return_value=PASSPORT):
         await handle(make_msg(media=True))
+    _, text, buttons = channel.last
+    assert "MARIA SILVA" in text and "FX123456" in text
+    assert [b.id.split(":")[-1] for b in buttons] == ["ok", "fix"]
+    async with session_scope() as s:  # not used until confirmed
+        assert (await s.scalar(select(CitaRequest))).state == RequestState.awaiting_documents
+    await handle(make_msg(button=buttons[0].id))
     assert "vigiando" in channel.last[1]
     async with session_scope() as s:
         assert (await s.scalar(select(CitaRequest))).state == RequestState.monitoring
@@ -73,7 +79,7 @@ async def test_full_happy_path(channel, provider, make_msg):
         req = await s.scalar(select(CitaRequest))
         assert req.state == RequestState.booked
         actions = (await s.scalars(select(AuditEvent.action))).all()
-    assert {"consent_given", "document_stored", "offer_created", "offer_approved", "booked"} <= set(actions)
+    assert {"consent_given", "data_pending", "data_confirmed", "offer_created", "offer_approved", "booked"} <= set(actions)
 
 
 @pytest.mark.asyncio
@@ -82,6 +88,7 @@ async def test_documents_are_encrypted_at_rest(channel, make_msg):
     await handle(make_msg(button="consent:yes"))
     with patch("app.router.extract_document", return_value=PASSPORT):
         await handle(make_msg(media=True))
+    await handle(make_msg(button=channel.last[2][0].id))
     async with session_scope() as s:
         doc = await s.scalar(select(Document))
         assert b"FX123456" not in doc.payload_encrypted
@@ -107,7 +114,7 @@ async def test_offer_expires_and_releases_session(channel, provider, make_msg):
     await handle(make_msg(button="consent:yes"))
     async with session_scope() as s:
         user = await s.scalar(select(User))
-        await service.store_document(s, user, PASSPORT)
+        await service.confirm_pending(s, user, (await service.store_document(s, user, PASSPORT)).id)
         req = await service.create_request(s, user, "madrid", "nie")
         offer = await service.create_offer(s, req, "Aluche", "x", {"hold_key": "h9"})
         offer.expires_at = offer.expires_at - timedelta(hours=1)
@@ -126,7 +133,7 @@ async def test_other_user_cannot_approve_offer(channel, make_msg):
     await handle(make_msg(button="consent:yes"))
     async with session_scope() as s:
         user = await s.scalar(select(User))
-        await service.store_document(s, user, PASSPORT)
+        await service.confirm_pending(s, user, (await service.store_document(s, user, PASSPORT)).id)
         req = await service.create_request(s, user, "madrid", "nie")
         offer_id = (await service.create_offer(s, req, "Aluche", "x")).id
     await handle(make_msg("oi", phone="34611111111"))
@@ -158,3 +165,76 @@ async def test_duplicate_webhook_is_ignored(channel, make_msg):
     await handle(m)
     await handle(m)
     assert len(channel.sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_typed_data_goes_through_readback(channel, make_msg):
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    await handle(make_msg("DATA full_name=ana souza;document_number=ab123;nationality=brasil"))
+    _, text, buttons = channel.last
+    assert "ANA SOUZA" in text and "AB123" in text and "BRASIL" in text
+    async with session_scope() as s:
+        user = await s.scalar(select(User))
+        assert await service.get_profile(s, user.id) == {}  # pending only
+    await handle(make_msg("Está certo"))  # typed instead of tapping the button
+    async with session_scope() as s:
+        user = await s.scalar(select(User))
+        assert (await service.get_profile(s, user.id))["full_name"] == "ANA SOUZA"
+
+
+@pytest.mark.asyncio
+async def test_correction_merges_only_the_changed_field(channel, make_msg):
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    with patch("app.router.extract_document", return_value=PASSPORT):
+        await handle(make_msg(media=True))
+    await handle(make_msg(button=channel.last[2][1].id))  # "Corrigir"
+    assert "errado" in channel.last[1]
+    await handle(make_msg("DATA full_name=MARIA SOUZA"))
+    _, text, buttons = channel.last
+    assert "MARIA SOUZA" in text and "FX123456" in text  # number kept from the photo
+    await handle(make_msg(button=buttons[0].id))
+    async with session_scope() as s:
+        user = await s.scalar(select(User))
+        profile = await service.get_profile(s, user.id)
+        assert profile["full_name"] == "MARIA SOUZA" and profile["document_number"] == "FX123456"
+        assert await s.scalar(select(func.count()).select_from(Document)) == 1  # stale pending replaced
+
+
+@pytest.mark.asyncio
+async def test_voice_note_is_transcribed_echoed_and_confirmed(channel, make_msg):
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    channel.media = (b"ogg", "audio/ogg")
+    with patch("app.router.transcribe", return_value="DATA full_name=JOAO PEREIRA;document_number=GH998877"):
+        await handle(make_msg(media=True, kind="audio"))
+    texts = [t for _, t, _ in channel.sent]
+    assert any("Entendi assim" in t and "JOAO PEREIRA" in t for t in texts)  # transcript shown to the client
+    assert channel.agent.received[-1].startswith("[voice note]")
+    _, text, buttons = channel.last
+    assert "GH998877" in text and buttons[0].id.endswith(":ok")
+
+
+@pytest.mark.asyncio
+async def test_failed_transcription_asks_to_resend(channel, make_msg):
+    from app.documents.transcriber import TranscriptionError
+
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    with patch("app.router.transcribe", side_effect=TranscriptionError("empty_transcript")):
+        await handle(make_msg(media=True, kind="audio"))
+    assert "áudio" in channel.last[1]
+
+
+@pytest.mark.asyncio
+async def test_old_readback_button_cannot_confirm_newer_data(channel, make_msg):
+    await handle(make_msg("oi"))
+    await handle(make_msg(button="consent:yes"))
+    await handle(make_msg("DATA full_name=A B"))
+    old = channel.last[2][0].id
+    await handle(make_msg("DATA full_name=C D"))
+    await handle(make_msg(button=old))
+    async with session_scope() as s:
+        user = await s.scalar(select(User))
+        assert await service.get_profile(s, user.id) == {}

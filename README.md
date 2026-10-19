@@ -22,7 +22,12 @@ worker.py ── app/citas/monitor.py ── provider ICP (Playwright) ── si
 ```
 
 1. **Consentimento primeiro.** Nenhum documento é lido antes do usuário tocar em "Aceito".
-2. **Documento por foto.** O Claude lê o passaporte/NIE/TIE com visão. A imagem nunca é salva; só os campos extraídos, criptografados (Fernet).
+2. **Dados por foto, texto ou áudio, sempre confirmados.** O cliente escolhe:
+   - **Foto** do passaporte/NIE/TIE: o Claude lê com visão.
+   - **Texto**: ele digita nome, documento e nacionalidade; o agente registra com a ferramenta `submit_personal_data`.
+   - **Áudio**: a nota de voz é transcrita (`app/documents/transcriber.py`), o Vale mostra *"🎙️ Entendi assim: …"* e segue como texto.
+
+   Em todos os casos o Vale devolve os dados lidos com os botões **Está certo / Corrigir**. Os dados ficam **pendentes** e não são usados até o "Está certo". Na correção, basta dizer o campo errado (por texto ou áudio); o resto é mantido. Fotos e áudios nunca são salvos; só os campos, criptografados (Fernet).
 3. **Pedido de cita.** O agente pergunta a província e o trâmite e abre o pedido. Fica `awaiting_documents` até ter os dados necessários e depois passa para `monitoring`.
 4. **Monitor.** O worker verifica o site oficial em intervalos educados (mínimo de 10 min por pedido, concorrência limitada).
 5. **Oferta com aprovação.** Quando acha vaga, mantém a sessão do navegador aberta e manda os botões **Confirmar / Não quero**. A vaga fica reservada para o usuário por 10 min.
@@ -51,6 +56,7 @@ com saídas para `needs_human`, `cancelled` e `failed`.
 | `app/channels/` | Adaptador de canal; `uazapi.py` hoje, Meta Cloud API/Telegram depois |
 | `app/agent/` | Agente Claude com ferramentas (abrir, consultar e cancelar pedidos, e-mail, apagar dados) |
 | `app/documents/extractor.py` | Leitura de documentos por visão, saída estruturada |
+| `app/documents/transcriber.py` | Transcrição de notas de voz (endpoint compatível com OpenAI: OpenAI, Groq, Whisper próprio) |
 | `app/citas/catalog.py` | Trâmites e províncias suportados |
 | `app/citas/service.py` | Regras de negócio e auditoria |
 | `app/citas/monitor.py` | Worker: verifica, oferece, reserva, expira |

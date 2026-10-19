@@ -37,7 +37,18 @@ class FakeChannel(Channel):
 
 
 class FakeAgent:
-    async def reply(self, session, user, text, on_delete):
+    """Stands in for Claude. A message like "DATA full_name=ANA SOUZA;document_number=AB123"
+    makes it call submit_personal_data the way the real agent would."""
+
+    def __init__(self):
+        self.received: list[str] = []
+
+    async def reply(self, session, user, text, on_delete, on_data=None):
+        self.received.append(text)
+        body = text.removeprefix("[voice note] ")
+        if body.startswith("DATA ") and on_data:
+            await on_data(dict(kv.split("=", 1) for kv in body[5:].split(";")))
+            return ""
         return f"agent:{text}"
 
 
@@ -71,7 +82,8 @@ async def fresh_db(tmp_path):
 def channel():
     ch = FakeChannel()
     set_channel(ch)
-    router.set_agent(FakeAgent())
+    ch.agent = FakeAgent()
+    router.set_agent(ch.agent)
     return ch
 
 
@@ -80,10 +92,11 @@ def provider():
     return FakeProvider()
 
 
-def msg(text="", button=None, media=False, mid=None, phone="34600000001"):
+def msg(text="", button=None, media=False, mid=None, phone="34600000001", kind="image"):
     import uuid
 
-    return IncomingMessage(phone=phone, message_id=mid or uuid.uuid4().hex, text=text, button_id=button, has_media=media)
+    return IncomingMessage(phone=phone, message_id=mid or uuid.uuid4().hex, text=text, button_id=button,
+                           has_media=media, media_kind=kind if media else None)
 
 
 @pytest.fixture

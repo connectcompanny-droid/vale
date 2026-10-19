@@ -39,3 +39,9 @@ def test_webhook_requires_secret():
     with TestClient(app) as client:
         assert client.post("/webhook/uazapi?secret=wrong", json=SAMPLE).status_code == 401
         assert client.post("/webhook/uazapi", json={"EventType": "presence"}).status_code == 401
+
+
+def test_voice_note_is_audio_media():
+    ch = UazapiChannel("http://x", "t")
+    m = ch.parse_webhook({**SAMPLE, "message": {**SAMPLE["message"], "messageType": "audioMessage", "text": ""}})
+    assert m.has_media and m.media_kind == "audio"

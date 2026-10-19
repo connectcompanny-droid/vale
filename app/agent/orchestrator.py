@@ -51,6 +51,23 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {"email": {"type": "string"}}, "required": ["email"]},
     },
     {
+        "name": "submit_personal_data",
+        "description": (
+            "Record personal details the user TYPED or SAID (voice transcript) instead of sending a photo, "
+            "or a correction to details already read. Pass only the fields they gave; the user then gets a "
+            "read-back with Confirm/Fix buttons, so do not repeat the details yourself afterwards."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "full_name": {"type": "string", "description": "Full name exactly as on the document"},
+                "document_number": {"type": "string", "description": "Passport or ID number, no spaces"},
+                "nie": {"type": "string", "description": "Spanish NIE if they have one, e.g. X1234567L"},
+                "nationality": {"type": "string", "description": "Country name in Spanish, e.g. BRASIL"},
+            },
+        },
+    },
+    {
         "name": "request_data_deletion",
         "description": "Ask the user to confirm deletion of all their data (sends a confirmation button).",
         "input_schema": {"type": "object", "properties": {}},
@@ -62,7 +79,8 @@ class Agent:
     def __init__(self, client: AsyncAnthropic | None = None):
         self.client = client or AsyncAnthropic(api_key=get_settings().anthropic_api_key)
 
-    async def _run_tool(self, session: AsyncSession, user: User, name: str, args: dict, on_delete: Callable[[], Awaitable[None]]) -> Any:
+    async def _run_tool(self, session: AsyncSession, user: User, name: str, args: dict, on_delete: Callable[[], Awaitable[None]],
+                        on_data: Callable[[dict], Awaitable[None]] | None) -> Any:
         try:
             if name == "create_cita_request":
                 province = find_province(args.get("province", "")) or args.get("province", "")
@@ -88,6 +106,11 @@ class Agent:
                     return {"error": "invalid_email"}
                 await service.set_contact_email(session, user, email)
                 return {"saved": True}
+            if name == "submit_personal_data":
+                if on_data is None:
+                    return {"error": "not_available"}
+                await on_data({k: v for k, v in args.items() if v})
+                return {"readback_sent": True}
             if name == "request_data_deletion":
                 await on_delete()
                 return {"confirmation_sent": True}
@@ -95,7 +118,8 @@ class Agent:
             return {"error": str(e)}
         return {"error": f"unknown_tool {name}"}
 
-    async def reply(self, session: AsyncSession, user: User, text: str, on_delete: Callable[[], Awaitable[None]]) -> str:
+    async def reply(self, session: AsyncSession, user: User, text: str, on_delete: Callable[[], Awaitable[None]],
+                    on_data: Callable[[dict], Awaitable[None]] | None = None) -> str:
         system = SYSTEM_PROMPT.format(
             lang=user.lang,
             provinces=", ".join(PROVINCES.values()),
@@ -115,7 +139,7 @@ class Agent:
             results = []
             for block in resp.content:
                 if block.type == "tool_use":
-                    out = await self._run_tool(session, user, block.name, block.input or {}, on_delete)
+                    out = await self._run_tool(session, user, block.name, block.input or {}, on_delete, on_data)
                     results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "user", "content": results})
         # Store only plain-text turns; tool payloads stay out of the long-lived history.

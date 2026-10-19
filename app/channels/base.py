@@ -21,6 +21,7 @@ class IncomingMessage:
     text: str = ""
     button_id: str | None = None  # set when the user tapped one of our buttons
     has_media: bool = False
+    media_kind: str | None = None  # "image" | "document" | "audio"
     media_mime: str | None = None
     push_name: str | None = None
     raw: dict = field(default_factory=dict)

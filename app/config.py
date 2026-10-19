@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     uazapi_instance_token: str = ""
     webhook_secret: str = ""
 
+    # Speech-to-text for voice notes (OpenAI-compatible /audio/transcriptions endpoint).
+    stt_api_url: str = "https://api.openai.com/v1/audio/transcriptions"
+    stt_api_key: str = ""
+    stt_model: str = "whisper-1"
+
     monitor_min_interval_minutes: int = 10
     monitor_max_concurrency: int = 2
     offer_ttl_minutes: int = 10
