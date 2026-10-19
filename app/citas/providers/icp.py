@@ -25,7 +25,11 @@ log = logging.getLogger(__name__)
 
 BASE_URL = "https://icp.administracionelectronica.gob.es/icpplus/index.html"
 
-# --- VERIFY against the live site ---
+# Confirmed on Granada (Oct 2026): province select, tramiteGrupo[0..1] lists, and the data form
+# (rdbTipoDocNie/Dni/Pas, txtIdCitado, txtDesCitado, btnEnviar). Nationality is not asked for
+# every trámite. Steps after the data form still need validation.
+# The site runs an anti-bot layer (TSPD frame). Vale must not try to evade it: if it blocks,
+# the request goes to needs_human and checks back off.
 SEL = {
     # Several candidates per element (CSS "a, b, c"): the first match wins. Narrow these down
     # to the real ids once confirmed with scripts/try_icp.py.

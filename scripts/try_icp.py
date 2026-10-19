@@ -157,10 +157,12 @@ async def run(province: str, tramite_code: str, check: bool) -> None:
                 return
             await snap(page, "data-form")
             missing = False
-            for key in ("doc_passport", "doc_nie", "doc_number", "name", "country", "send"):
+            for key in ("doc_passport", "doc_nie", "doc_number", "name", "send"):
                 present = await (await root(page)).locator(SEL[key]).count() > 0
                 missing |= not present
                 (ok if present else fail)(f"field {key}: {'found' if present else 'NOT found'}")
+            has_country = await (await root(page)).locator(SEL["country"]).count() > 0
+            ok(f"field country: {'found' if has_country else 'not asked for this trámite (optional)'}")
             if missing:
                 await dump_elements(page)
             if await captcha(await root(page)):
