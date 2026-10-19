@@ -1,10 +1,13 @@
 """Procedures (trámites) and provinces Vale supports.
 
-`match` holds keywords searched (case-insensitive, accents ignored) in the trámite
-dropdown of the cita previa site, because the visible labels and internal ids vary
-by province. Validate each entry against the live site before enabling a province.
+`match` holds alternatives searched in the trámite dropdowns of the cita previa site
+(case-insensitive, accents and punctuation ignored). An option matches an alternative when
+it contains ALL of its words, so "ASIGNACION NIE" matches both "POLICIA-CERTIFICADOS Y
+ASIGNACION NIE" (Granada) and "POLICÍA-ASIGNACIÓN DE NIE". Labels vary by province: validate
+with scripts/try_icp.py before enabling one.
 """
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -21,7 +24,7 @@ TRAMITES: dict[str, Tramite] = {
     "nie": Tramite(
         code="nie",
         label={"pt": "Atribuição de NIE", "es": "Asignación de NIE", "en": "NIE assignment"},
-        match=("ASIGNACION DE NIE",),
+        match=("ASIGNACION NIE",),
         needs=("full_name", "document_number", "nationality"),
     ),
     "huellas": Tramite(
@@ -33,13 +36,19 @@ TRAMITES: dict[str, Tramite] = {
     "certificado_ue": Tramite(
         code="certificado_ue",
         label={"pt": "Certificado de registro UE", "es": "Certificado de registro UE", "en": "EU registration certificate"},
-        match=("CERTIFICADO DE REGISTRO",),
+        match=("CERTIFICADO REGISTRO UE", "CERTIFICADO REGISTRO CIUDADANO"),
         needs=("full_name", "document_number", "nationality"),
     ),
     "certificados": Tramite(
         code="certificados",
         label={"pt": "Certificados (residência, concordância)", "es": "Certificados (residencia, concordancia)", "en": "Certificates (residence, concordance)"},
-        match=("CERTIFICADOS",),
+        match=("CERTIFICADOS CONCORDANCIA", "CERTIFICADOS RESIDENCIA"),
+        needs=("full_name", "document_number", "nationality"),
+    ),
+    "recogida_tie": Tramite(
+        code="recogida_tie",
+        label={"pt": "Recolha do cartão TIE", "es": "Recogida de la TIE", "en": "TIE card collection"},
+        match=("RECOGIDA TARJETA",),
         needs=("full_name", "document_number", "nationality"),
     ),
 }
@@ -56,6 +65,10 @@ def normalize(text: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", text.upper()) if unicodedata.category(c) != "Mn")
 
 
+def _words(text: str) -> set[str]:
+    return set(re.sub(r"[^A-Z0-9]+", " ", normalize(text)).split())
+
+
 def find_province(value: str) -> str | None:
     v = normalize(value).lower()
     for key, name in PROVINCES.items():
@@ -65,5 +78,5 @@ def find_province(value: str) -> str | None:
 
 
 def label_matches(tramite: Tramite, option_text: str) -> bool:
-    text = normalize(option_text)
-    return all(normalize(k) in text for k in tramite.match)
+    words = _words(option_text)
+    return any(_words(alt) <= words for alt in tramite.match)
