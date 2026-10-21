@@ -15,10 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini run_monitor.py ./
+COPY scripts/start.sh ./start.sh
 
 RUN useradd -m vale && chown -R vale /app
 USER vale
 
 EXPOSE 8000
-# API: stateless, scale with more replicas or WEB_CONCURRENCY. Workers and monitor override CMD.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --workers ${WEB_CONCURRENCY:-2}"]
+# Role chosen by VALE_ROLE (api by default); docker-compose overrides the command per service.
+CMD ["sh", "./start.sh"]

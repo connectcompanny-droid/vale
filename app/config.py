@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,16 @@ class Settings(BaseSettings):
     # Dev/tests only. In production the schema is managed by Alembic (`alembic upgrade head`).
     auto_create_tables: bool = True
     fernet_key: str = ""
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, v: str) -> str:
+        """Hosted Postgres (Railway, Supabase, Render...) hands out postgres:// or postgresql://
+        URLs; the app needs the asyncpg driver."""
+        for prefix in ("postgres://", "postgresql://"):
+            if v.startswith(prefix):
+                return "postgresql+asyncpg://" + v[len(prefix):]
+        return v
 
     # Job queue. "inline" = process in the API process (dev/tests). "redis" = arq workers (production).
     queue_mode: str = "inline"

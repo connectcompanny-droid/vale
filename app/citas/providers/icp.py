@@ -83,6 +83,10 @@ def classify_error(e: Exception) -> str:
     return type(e).__name__
 
 
+# Container platforms (Railway, Render...) give a tiny /dev/shm; Chrome would crash on big pages.
+LAUNCH_ARGS = ["--disable-dev-shm-usage"]
+
+
 def resolve_channel(setting: str, machine: str | None = None) -> str | None:
     """Browser channel to launch. "auto": Google Chrome on x86_64; on ARM servers (e.g. Oracle
     Ampere) Google ships no Linux Chrome, so Playwright's bundled Chromium is used."""
@@ -119,12 +123,12 @@ class ICPProvider(CitaProvider):
             # personal data goes through this connection.
             channel = resolve_channel(s.browser_channel)
             try:
-                self._browser = await self._pw.chromium.launch(headless=s.headless, channel=channel)
+                self._browser = await self._pw.chromium.launch(headless=s.headless, channel=channel, args=LAUNCH_ARGS)
             except Exception as e:
                 if not channel:
                     raise
                 log.warning("browser channel %r unavailable (%s); using bundled Chromium", channel, e)
-                self._browser = await self._pw.chromium.launch(headless=s.headless)
+                self._browser = await self._pw.chromium.launch(headless=s.headless, args=LAUNCH_ARGS)
         return self._browser
 
     async def _new_page(self) -> tuple[BrowserContext, Page]:

@@ -86,3 +86,11 @@ def test_browser_channel_auto_picks_chrome_on_x86_and_chromium_on_arm():
     assert resolve_channel("auto", "arm64") is None
     assert resolve_channel("chrome", "aarch64") == "chrome"
     assert resolve_channel("", "x86_64") is None
+
+
+def test_hosted_postgres_urls_get_the_async_driver():
+    from app.config import Settings
+
+    assert Settings(database_url="postgresql://u:p@h:5432/d").database_url == "postgresql+asyncpg://u:p@h:5432/d"
+    assert Settings(database_url="postgres://u:p@h/d").database_url == "postgresql+asyncpg://u:p@h/d"
+    assert Settings(database_url="sqlite+aiosqlite:///x.db").database_url == "sqlite+aiosqlite:///x.db"
