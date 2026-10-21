@@ -5,3 +5,5 @@ __pycache__/
 *.db
 .pytest_cache/
 debug/
+vale.db
+vale.db-*
