@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     headless: bool = True
     # "chrome" = real Google Chrome (current certificate root store, auto-updated). Empty = Playwright's
     # bundled Chromium, whose root store is frozen at its build date and can reject valid certificates.
-    browser_channel: str = "chrome"
+    browser_channel: str = "auto"  # auto: Chrome on x86_64, bundled Chromium on ARM
     # Pause all checks for this long after an untrusted-certificate error (never bypass TLS).
     tls_pause_minutes: int = 30
     # Pause all checks for this long when the site's firewall rejects us ("Request Rejected").

@@ -97,7 +97,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 2. **Conferir a UAZAPI.** Caminhos de envio (`/send/text`, `/send/menu`, `/message/download`) e campos do webhook estão isolados em `app/channels/uazapi.py`; compare com a integração do Sofia.
 3. **Política do WhatsApp.** O acesso de assistentes de IA gerais ao WhatsApp na UE depende da medida provisória da Comissão Europeia. Mantenha Telegram/SMS como canal reserva.
 4. **Jurídico e RGPD.** DPIA, termos de uso, política de privacidade e base legal para tratar documentos de identidade. Validar com advogado de imigração que o fluxo está dentro da lei.
-5. **Certificados (TLS).** O Vale **nunca** ignora erros de certificado, porque dados de passaporte passam por essa conexão. Em produção ele usa o Google Chrome real (`BROWSER_CHANNEL=chrome`, instalado no Docker), cuja lista de certificados se mantém atualizada. Se aparecer `ERR_CERT_*`, o monitor pausa todas as verificações por `TLS_PAUSE_MINUTES` e registra um `ALERT` no log: verifique proxy, antivírus ou rede do servidor antes de retomar.
+5. **Certificados (TLS).** O Vale **nunca** ignora erros de certificado, porque dados de passaporte passam por essa conexão. Em servidores x86_64 ele usa o Google Chrome real, cuja lista de certificados se mantém atualizada; em servidores ARM (como o Oracle Cloud gratuito), onde não existe Chrome para Linux, usa o Chromium do Playwright (`BROWSER_CHANNEL=auto` escolhe sozinho). Se aparecer `ERR_CERT_*`, o monitor pausa todas as verificações por `TLS_PAUSE_MINUTES` e registra um `ALERT` no log: verifique proxy, antivírus ou rede do servidor antes de retomar.
 
 
 ## Próximos passos

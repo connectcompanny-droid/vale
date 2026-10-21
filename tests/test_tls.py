@@ -76,3 +76,13 @@ async def test_firewall_block_pauses_for_hours(channel, provider, make_msg):
     until = await site_guard.paused_until()
     assert until and until - datetime.now(timezone.utc) > timedelta(hours=5)
     assert await Monitor(provider).paused()  # every other process sees the same pause
+
+
+def test_browser_channel_auto_picks_chrome_on_x86_and_chromium_on_arm():
+    from app.citas.providers.icp import resolve_channel
+
+    assert resolve_channel("auto", "x86_64") == "chrome"
+    assert resolve_channel("auto", "aarch64") is None
+    assert resolve_channel("auto", "arm64") is None
+    assert resolve_channel("chrome", "aarch64") == "chrome"
+    assert resolve_channel("", "x86_64") is None

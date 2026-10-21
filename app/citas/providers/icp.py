@@ -12,6 +12,7 @@ IMPORTANT, before enabling in production:
 
 import asyncio
 import logging
+import platform
 import random
 import time
 import uuid
@@ -82,6 +83,16 @@ def classify_error(e: Exception) -> str:
     return type(e).__name__
 
 
+def resolve_channel(setting: str, machine: str | None = None) -> str | None:
+    """Browser channel to launch. "auto": Google Chrome on x86_64; on ARM servers (e.g. Oracle
+    Ampere) Google ships no Linux Chrome, so Playwright's bundled Chromium is used."""
+    setting = (setting or "").strip().lower()
+    if setting == "auto":
+        arch = (machine or platform.machine()).lower()
+        return None if arch in ("aarch64", "arm64") else "chrome"
+    return setting or None
+
+
 def _nie_like(value: str) -> bool:
     v = value.upper().replace("-", "")
     return len(v) == 9 and v[0] in "XYZ" and v[1:8].isdigit()
@@ -106,12 +117,13 @@ class ICPProvider(CitaProvider):
             s = get_settings()
             # Real Chrome when available: up-to-date root store. TLS errors are NEVER ignored:
             # personal data goes through this connection.
+            channel = resolve_channel(s.browser_channel)
             try:
-                self._browser = await self._pw.chromium.launch(headless=s.headless, channel=s.browser_channel or None)
+                self._browser = await self._pw.chromium.launch(headless=s.headless, channel=channel)
             except Exception as e:
-                if not s.browser_channel:
+                if not channel:
                     raise
-                log.warning("browser channel %r unavailable (%s); using bundled Chromium", s.browser_channel, e)
+                log.warning("browser channel %r unavailable (%s); using bundled Chromium", channel, e)
                 self._browser = await self._pw.chromium.launch(headless=s.headless)
         return self._browser
 

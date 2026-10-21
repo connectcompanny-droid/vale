@@ -75,7 +75,7 @@ Premissas (ajustar com dados reais): cada cliente troca ~20 mensagens no total, 
 | `monitor` | 1 | 1 | 1 a 2 |
 | Banco | Postgres no mesmo VPS | Postgres gerenciado na UE | Postgres gerenciado + pooler |
 | WhatsApp | UAZAPI | **Meta Cloud API** | Meta Cloud API |
-| Infra | 1 VPS (4 vCPU, 8 GB) | 2 VPS ou 1 maior | Vários nós (Swarm/Kubernetes) |
+| Infra | Oracle Cloud Always Free (ARM, 2 OCPU, 12 GB, custo zero) ou 1 VPS (2 a 4 vCPU, 8 GB) | 2 VPS ou 1 maior | Vários nós (Swarm/Kubernetes) |
 
 Medição local (`scripts/simulate_load.py`): sem IA, o próprio Vale processa ~110 msg/s num único processo com SQLite. Com 3 s de latência simulada do Claude e concorrência 20, um worker faz ~8 msg/s (~700 mil mensagens/dia). **O gargalo do sistema não é o código, e sim o rate limit da API do Claude e do canal de WhatsApp.**
 
