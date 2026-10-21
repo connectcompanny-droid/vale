@@ -27,7 +27,9 @@ services:
   # Receives WhatsApp webhooks and enqueues them. Stateless: add replicas behind a load balancer.
   api:
     <<: *app
-    ports: ["8000:8000"]
+    # Only reachable from this machine; the public HTTPS proxy (Caddy) forwards to it.
+    # Docker-published ports bypass ufw, so never publish 8000 on all interfaces.
+    ports: ["127.0.0.1:8000:8000"]
     environment:
       QUEUE_MODE: redis
       REDIS_URL: redis://redis:6379/0
@@ -66,7 +68,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: vale
-      POSTGRES_PASSWORD: vale
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: vale
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
