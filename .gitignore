@@ -7,3 +7,4 @@ __pycache__/
 debug/
 vale.db
 vale.db-*
+graphify-out/
