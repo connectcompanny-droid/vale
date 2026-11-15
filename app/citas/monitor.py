@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from app import audit
 from app.channels import Button, get_channel
 from app.citas import service, site_guard
+from app.citas.catalog import codes_for
 from app.citas.providers.base import CitaProvider, Slot
 from app.config import get_settings
 from app.db import session_scope
@@ -48,9 +49,13 @@ async def _notify(phone: str, text: str, buttons: list[Button] | None = None) ->
 
 
 class Monitor:
-    def __init__(self, provider: CitaProvider, site: str = site_guard.ICP):
+    def __init__(self, provider: CitaProvider, site: str = site_guard.ICP, primary: bool = True):
+        """One monitor per appointment system: its own pace and pauses, and only its own trámites.
+        `primary` runs the shared housekeeping (payment links, reminders, cleanup)."""
         self.provider = provider
         self.site = site
+        self.primary = primary
+        self.codes = codes_for(site)
         self.sem = asyncio.Semaphore(get_settings().monitor_max_concurrency)
         self._last_cleanup = float("-inf")
 
@@ -66,7 +71,7 @@ class Monitor:
         try:
             from app.notifications import notify_pause
 
-            await notify_pause(max(1, round(minutes / 60)))
+            await notify_pause(max(1, round(minutes / 60)), codes=self.codes)
         except Exception:
             log.exception("could not notify clients about the pause")
         log.error("ALERT %s on request %s: site %s paused for every process until %s. "
@@ -75,7 +80,7 @@ class Monitor:
     # ---------- loop ----------
 
     async def run_forever(self) -> None:
-        log.info("monitor %s started", get_settings().instance_id)
+        log.info("monitor %s started for %s", get_settings().instance_id, self.site)
         try:
             while True:
                 try:
@@ -89,12 +94,13 @@ class Monitor:
     async def tick(self) -> None:
         await self.expire_offers()
         await self.provider.sweep()
-        await self.housekeeping()
+        if self.primary:
+            await self.housekeeping()
         if await self.paused():
             return
         await self.book_approved()
         async with session_scope() as s:
-            groups = [(rep.id, others) for rep, others in await service.due_groups(s, get_settings().monitor_max_concurrency)]
+            groups = [(rep.id, others) for rep, others in await service.due_groups(s, get_settings().monitor_max_concurrency, self.codes)]
         tasks = []
         for rep_id, others in groups:
             if not await site_guard.acquire_visit(self.site):
@@ -125,7 +131,7 @@ class Monitor:
 
     async def expire_offers(self) -> None:
         async with session_scope() as s:
-            expired = [(o.raw.get("hold_key"), o.request.user.phone, o.request.user.lang) for o in await service.expire_offers(s)]
+            expired = [(o.raw.get("hold_key"), o.request.user.phone, o.request.user.lang) for o in await service.expire_offers(s, self.codes)]
         for hold_key, phone, lang in expired:  # committed first: a failed message never blocks the tick
             if hold_key and self.provider.owns(hold_key):
                 await self.provider.release(hold_key)
@@ -180,7 +186,7 @@ class Monitor:
     async def book_approved(self) -> None:
         async with session_scope() as s:
             jobs = [(r.id, o.id, o.office, o.starts_at, dict(o.raw), service.aware(o.expires_at), r.user.phone, r.user.lang)
-                    for r, o in await service.requests_to_book(s)]
+                    for r, o in await service.requests_to_book(s, self.codes)]
         for request_id, offer_id, office, starts_at, raw, expires_at, phone, lang in jobs:
             hold_key = raw.get("hold_key")
             if not hold_key or not self.provider.owns(hold_key):

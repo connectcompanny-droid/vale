@@ -18,6 +18,7 @@ class Tramite:
     label: dict[str, str]
     match: tuple[str, ...]
     needs: tuple[str, ...]  # personal fields required to request it
+    site: str = "icp"  # which government appointment system books it (see SITES)
 
 
 TRAMITES: dict[str, Tramite] = {
@@ -52,6 +53,34 @@ TRAMITES: dict[str, Tramite] = {
         needs=("full_name", "document_number", "nationality"),
     ),
 }
+
+TRAMITES["acreditacion_certificado"] = Tramite(
+    code="acreditacion_certificado",
+    label={"pt": "Cita para comprovar identidade (certificado digital)", "es": "Cita de acreditación (certificado digital)",
+           "en": "Identity appointment (digital certificate)"},
+    match=("ACREDITACION CERTIFICADO", "CERTIFICADO DIGITAL", "CERTIFICADO ELECTRONICO"),
+    needs=("full_name", "nie"),
+    site="aeat",
+)
+
+# Appointment systems. A site is offered to clients only when its robot has been validated on the
+# real pages and switched on in ENABLED_SITES; until then the agent guides the client instead.
+SITES = ("icp", "aeat")
+
+
+def enabled_sites() -> set[str]:
+    from app.config import get_settings
+
+    return {x.strip().lower() for x in get_settings().enabled_sites.split(",") if x.strip()} & set(SITES)
+
+
+def tramite_enabled(code: str) -> bool:
+    return code in TRAMITES and TRAMITES[code].site in enabled_sites()
+
+
+def codes_for(site: str) -> set[str]:
+    return {c for c, t in TRAMITES.items() if t.site == site}
+
 
 # Provinces Vale knows. Which ones are open to clients is ACTIVE_PROVINCES (config): start narrow,
 # open each one only after its site flow has been validated with scripts/try_icp.py.

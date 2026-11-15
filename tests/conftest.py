@@ -11,6 +11,7 @@ os.environ.setdefault("QUEUE_MODE", "inline")
 os.environ.setdefault("ACTIVE_PROVINCES", "granada,madrid,barcelona")
 # Existing tests were written for a Portuguese default and an open door; both are tested explicitly elsewhere.
 os.environ.setdefault("DEFAULT_LANG", "pt")
+os.environ.setdefault("ENABLED_SITES", "icp")
 os.environ.setdefault("REPLY_ONLY_RELEVANT", "false")
 
 from app import db, router  # noqa: E402

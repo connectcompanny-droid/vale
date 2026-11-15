@@ -93,7 +93,7 @@ async def send_external_reminders(now: datetime | None = None) -> int:
     return sent
 
 
-async def notify_pause(hours: int, now: datetime | None = None) -> int:
+async def notify_pause(hours: int, now: datetime | None = None, codes: set[str] | None = None) -> int:
     """Tell waiting clients the site is paused, at most once a day per request, one message per person."""
     from app.channels import get_channel
 
@@ -102,7 +102,7 @@ async def notify_pause(hours: int, now: datetime | None = None) -> int:
     waiting = (RequestState.monitoring, RequestState.offer_pending)
     async with session_scope() as s:
         ids = list((await s.scalars(select(CitaRequest.id).where(
-            CitaRequest.state.in_(waiting),
+            CitaRequest.state.in_(waiting), *([CitaRequest.tramite_code.in_(codes)] if codes else []),
             or_(CitaRequest.pause_notified_at.is_(None), CitaRequest.pause_notified_at < cutoff),
         ))).all())
     people: dict[str, str] = {}

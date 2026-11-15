@@ -14,9 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit, llm
-from app.agent.prompts import SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
+from app.agent.prompts import CERT_BOOKING_OFF, CERT_BOOKING_ON, SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
 from app.citas import service
-from app.citas.catalog import PROVINCES, TRAMITES, find_province
+from app.citas.catalog import PROVINCES, TRAMITES, find_province, tramite_enabled
 from app.config import get_settings
 from app.models import AuditEvent, ExternalAppointment, User
 
@@ -218,7 +218,8 @@ class Agent:
             lang=user.lang,
             channel=WEB_NOTE.format(ttl=get_settings().offer_ttl_minutes) if service.is_web(user.phone) else WHATSAPP_NOTE,
             provinces=", ".join(PROVINCES.values()),
-            tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['es'])}" for t in TRAMITES.values()),
+            tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['es'])}" for t in TRAMITES.values() if tramite_enabled(t.code)),
+            cert_booking=CERT_BOOKING_ON if tramite_enabled("acreditacion_certificado") else CERT_BOOKING_OFF,
         )
         history = [h for h in (user.history or []) if h.get("role") in ("user", "assistant")][-MAX_HISTORY:]
         messages: list[dict] = [*history, {"role": "user", "content": text}]

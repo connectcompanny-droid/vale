@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # Language of the fixed messages until the client shows another one.
     default_lang: str = "es"
 
+    # Appointment systems Vale books on by itself: icp (extranjería), aeat (identity appointment for
+    # the digital certificate). Enable one only after validating it on the real site.
+    enabled_sites: str = "icp"
+
     # Provinces open to clients (comma separated keys from the catalog). Start with the validated ones.
     active_provinces: str = "granada"
 

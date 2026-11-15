@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app import audit
-from app.citas.catalog import PROVINCES, TRAMITES
+from app.citas.catalog import PROVINCES, TRAMITES, tramite_enabled
 from app.config import get_settings
 from app.crypto import decrypt_json, encrypt_json
 from app.documents.extractor import ExtractedDocument
@@ -211,6 +211,8 @@ async def create_request(session: AsyncSession, user: User, province: str, trami
         raise RuleError(f"province_not_supported: {province}")
     if tramite_code not in TRAMITES:
         raise RuleError(f"tramite_not_supported: {tramite_code}")
+    if not tramite_enabled(tramite_code):
+        raise RuleError(f"tramite_not_bookable_yet: {tramite_code}")
     for r in await active_requests(session, user.id):
         if r.tramite_code == tramite_code:
             raise RuleError("already_active_for_this_tramite")
@@ -238,7 +240,7 @@ async def cancel_request(session: AsyncSession, user: User, request_id: int) -> 
     return req
 
 
-async def due_groups(session: AsyncSession, limit: int) -> list[tuple[CitaRequest, list[int]]]:
+async def due_groups(session: AsyncSession, limit: int, codes: set[str] | None = None) -> list[tuple[CitaRequest, list[int]]]:
     """One check per (province, trámite), not per client: the site sees a single visit no matter
     how many clients wait for the same procedure. The representative is the client who has waited
     longest (first come, first served); the rest of the group shares the result."""
@@ -248,6 +250,8 @@ async def due_groups(session: AsyncSession, limit: int) -> list[tuple[CitaReques
     )).all()
     groups: dict[tuple[str, str], list[CitaRequest]] = {}
     for r in rows:
+        if codes is not None and r.tramite_code not in codes:
+            continue  # belongs to another appointment system
         groups.setdefault((r.province, r.tramite_code), []).append(r)
     due = []
     for members in groups.values():
@@ -350,12 +354,14 @@ async def reject_offer(session: AsyncSession, user: User, offer_id: int) -> Slot
     return offer
 
 
-async def expire_offers(session: AsyncSession) -> list[SlotOffer]:
+async def expire_offers(session: AsyncSession, codes: set[str] | None = None) -> list[SlotOffer]:
     pending = (await session.scalars(
         select(SlotOffer).options(selectinload(SlotOffer.request).selectinload(CitaRequest.user)).where(SlotOffer.state == OfferState.pending)
     )).all()
     expired = []
     for o in pending:
+        if codes is not None and o.request.tramite_code not in codes:
+            continue
         if aware(o.expires_at) < utcnow():
             o.state = OfferState.expired
             if o.request.state == RequestState.offer_pending:
@@ -365,12 +371,14 @@ async def expire_offers(session: AsyncSession) -> list[SlotOffer]:
     return expired
 
 
-async def requests_to_book(session: AsyncSession) -> list[tuple[CitaRequest, SlotOffer]]:
+async def requests_to_book(session: AsyncSession, codes: set[str] | None = None) -> list[tuple[CitaRequest, SlotOffer]]:
     reqs = (await session.scalars(
         select(CitaRequest).options(selectinload(CitaRequest.offers), selectinload(CitaRequest.user)).where(CitaRequest.state == RequestState.booking)
     )).all()
     out = []
     for r in reqs:
+        if codes is not None and r.tramite_code not in codes:
+            continue
         approved = [o for o in r.offers if o.state == OfferState.approved]
         if approved:
             out.append((r, approved[-1]))
