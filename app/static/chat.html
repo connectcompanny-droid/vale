@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a1733">
+<title>Vale</title>
+<style>
+:root{--navy:#10234a;--deep:#0a1733;--mint:#3ddc97;--cream:#f6f1e7;--paper:#ede6d8;--muted:#4a5878;--danger:#b3261e}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--deep);color:var(--navy);font-size:16px;line-height:1.45}
+button,textarea{font:inherit;color:inherit}
+.app{height:100dvh;max-width:46rem;margin:0 auto;display:flex;flex-direction:column;background:var(--cream)}
+header{background:var(--deep);color:var(--cream);padding:12px 16px;display:flex;align-items:center;gap:12px;border-bottom:2px solid var(--mint)}
+.avatar{width:38px;height:38px;flex:none;display:grid;place-items:center;background:var(--mint);color:var(--deep);font-weight:800;font-size:20px;border:2px solid var(--cream)}
+header strong{display:block;font-size:17px;letter-spacing:-.01em}
+header small{display:flex;align-items:center;gap:6px;font-size:12.5px;opacity:.85}
+header small i{width:7px;height:7px;border-radius:50%;background:var(--mint)}
+.wa{margin-left:auto;color:var(--deep);background:var(--mint);text-decoration:none;font-weight:600;font-size:13.5px;padding:8px 12px;border:2px solid var(--cream);white-space:nowrap}
+.wa:focus-visible,button:focus-visible,textarea:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+.log{flex:1;overflow-y:auto;padding:18px 14px 8px;display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
+.note{align-self:center;max-width:34rem;text-align:center;font-size:13px;color:var(--muted);padding:4px 10px}
+.msg{max-width:min(86%,34rem);padding:10px 13px;white-space:pre-wrap;overflow-wrap:anywhere;border:2px solid var(--navy)}
+.msg.vale{align-self:flex-start;background:#fff}
+.msg.me{align-self:flex-end;background:var(--navy);color:var(--cream)}
+.msg a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+.msg time{display:block;margin-top:4px;font-size:11px;opacity:.6;text-align:right}
+.choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.choices button{background:var(--mint);border:2px solid var(--navy);box-shadow:3px 3px 0 var(--navy);padding:9px 14px;font-weight:600;cursor:pointer}
+.choices button:nth-child(n+2){background:var(--cream)}
+.choices button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--navy)}
+.choices button:disabled{opacity:.45;box-shadow:none;cursor:default;transform:none}
+.typing{align-self:flex-start;display:flex;gap:5px;padding:13px 14px;border:2px solid var(--navy);background:#fff}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--navy);animation:b 1.1s infinite}
+.typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+@keyframes b{0%,60%,100%{opacity:.25}30%{opacity:1}}
+.status{min-height:0;font-size:13px;color:var(--danger);padding:0 16px}
+.status:not(:empty){padding:6px 16px}
+form{display:flex;align-items:flex-end;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--paper);border-top:2px solid var(--navy)}
+textarea{flex:1;resize:none;min-height:46px;max-height:140px;padding:11px 12px;border:2px solid var(--navy);background:#fff;border-radius:0}
+.icon{width:46px;height:46px;flex:none;display:grid;place-items:center;background:var(--cream);border:2px solid var(--navy);cursor:pointer;padding:0}
+.icon svg{width:22px;height:22px;fill:none;stroke:var(--navy);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.icon.send{background:var(--mint);box-shadow:3px 3px 0 var(--navy)}
+.icon.send:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--navy)}
+.icon.rec{background:var(--danger)}.icon.rec svg{stroke:#fff}
+.icon:disabled{opacity:.45;cursor:default}
+footer{font-size:12px;color:var(--muted);text-align:center;padding:0 12px 8px;background:var(--paper)}
+footer a{color:inherit}
+@media (prefers-reduced-motion:reduce){.typing i{animation:none;opacity:.6}}
+@media (min-width:48rem){body{padding:24px 0}.app{height:calc(100dvh - 48px);border:2px solid var(--mint)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <span class="avatar" aria-hidden="true">v</span>
+    <div><strong>Vale</strong><small><i aria-hidden="true"></i><span id="tagline"></span></small></div>
+    <a class="wa" id="wa" hidden target="_blank" rel="noopener"></a>
+  </header>
+  <main class="log" id="log" aria-live="polite"></main>
+  <div class="status" id="status" role="alert"></div>
+  <form id="form">
+    <input type="file" id="file" accept="image/*,application/pdf" hidden>
+    <button class="icon" type="button" id="attach"><svg viewBox="0 0 24 24"><path d="M21 12.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l9-9a3.7 3.7 0 015.2 5.2l-9 9a1.8 1.8 0 01-2.6-2.6l8.3-8.3"/></svg></button>
+    <button class="icon" type="button" id="mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+    <textarea id="text" rows="1" maxlength="2000" autocomplete="off"></textarea>
+    <button class="icon send" type="submit" id="send"><svg viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></svg></button>
+  </form>
+  <footer id="foot"></footer>
+</div>
+<script>
+(() => {
+  const WHATSAPP = "__WHATSAPP__", TERMS = "__TERMS__", PRIVACY = "__PRIVACY__";
+  const lang = (navigator.language || "pt").slice(0, 2).toLowerCase();
+  const L = ({
+    pt: { tag: "Citas de extranjería · responde em instantes", hello: "Olá", ph: "Escreva uma mensagem", wa: "Usar no WhatsApp",
+          keep: "Deixe esta página aberta para receber o aviso assim que abrir uma vaga.", attach: "Enviar foto do documento",
+          mic: "Gravar áudio", stop: "Parar e enviar", send: "Enviar", photo: "📷 Foto enviada", pdf: "📄 Documento enviado", audio: "🎤 Áudio enviado",
+          offline: "Sem conexão com o Vale. Tentando de novo…", slow: "Muitas mensagens seguidas. Espere um minuto.", big: "Arquivo grande demais (máximo 6 MB).",
+          type: "Esse tipo de arquivo não é aceito. Envie uma foto ou PDF.", nomic: "Não consegui usar o microfone.", terms: "Termos", privacy: "Privacidade", fresh: "Nova mensagem do Vale" },
+    es: { tag: "Citas de extranjería · responde al momento", hello: "Hola", ph: "Escribe un mensaje", wa: "Usar en WhatsApp",
+          keep: "Deja esta página abierta para recibir el aviso en cuanto haya un hueco.", attach: "Enviar foto del documento",
+          mic: "Grabar audio", stop: "Parar y enviar", send: "Enviar", photo: "📷 Foto enviada", pdf: "📄 Documento enviado", audio: "🎤 Audio enviado",
+          offline: "Sin conexión con Vale. Reintentando…", slow: "Demasiados mensajes seguidos. Espera un minuto.", big: "Archivo demasiado grande (máximo 6 MB).",
+          type: "Ese tipo de archivo no se acepta. Envía una foto o un PDF.", nomic: "No he podido usar el micrófono.", terms: "Términos", privacy: "Privacidad", fresh: "Nuevo mensaje de Vale" },
+    en: { tag: "Immigration appointments · replies in moments", hello: "Hello", ph: "Write a message", wa: "Use on WhatsApp",
+          keep: "Keep this page open to be alerted as soon as a slot opens.", attach: "Send a photo of the document",
+          mic: "Record audio", stop: "Stop and send", send: "Send", photo: "📷 Photo sent", pdf: "📄 Document sent", audio: "🎤 Voice note sent",
+          offline: "No connection to Vale. Retrying…", slow: "Too many messages in a row. Wait a minute.", big: "File too large (6 MB maximum).",
+          type: "That file type isn't accepted. Send a photo or a PDF.", nomic: "Couldn't use the microphone.", terms: "Terms", privacy: "Privacy", fresh: "New message from Vale" },
+  })[lang] || null;
+  const T = L || {};
+  if (!L) Object.assign(T, { tag: "", hello: "Hello", ph: "", wa: "WhatsApp", keep: "", attach: "Attach", mic: "Record", stop: "Stop", send: "Send",
+    photo: "📷", pdf: "📄", audio: "🎤", offline: "Offline…", slow: "Slow down.", big: "Too large.", type: "Unsupported file.", nomic: "No microphone.", terms: "Terms", privacy: "Privacy", fresh: "Vale" });
+  document.documentElement.lang = L ? lang : "en";
+
+  const $ = (id) => document.getElementById(id);
+  const log = $("log"), form = $("form"), text = $("text"), statusEl = $("status"), file = $("file"), mic = $("mic");
+  $("tagline").textContent = T.tag;
+  text.placeholder = T.ph;
+  $("attach").setAttribute("aria-label", T.attach); $("attach").title = T.attach;
+  mic.setAttribute("aria-label", T.mic); mic.title = T.mic;
+  $("send").setAttribute("aria-label", T.send);
+  if (/^\d{8,15}$/.test(WHATSAPP)) { const a = $("wa"); a.href = "https://wa.me/" + WHATSAPP; a.textContent = T.wa; a.hidden = false; }
+  const foot = $("foot");
+  [[TERMS, T.terms], [PRIVACY, T.privacy]].filter(([u]) => /^https:\/\//.test(u)).forEach(([u, label], i) => {
+    if (i) foot.append(" · ");
+    const a = document.createElement("a"); a.href = u; a.target = "_blank"; a.rel = "noopener"; a.textContent = label; foot.append(a);
+  });
+  if (T.keep) { const n = document.createElement("p"); n.className = "note"; n.textContent = T.keep; log.append(n); }
+
+  let token = null, lastId = 0, waiting = 0, typingEl = null, failures = 0, unseen = 0;
+  const store = { get: () => { try { return localStorage.getItem("vale.session"); } catch { return null; } },
+                  set: (v) => { try { localStorage.setItem("vale.session", v); } catch {} } };
+  const baseTitle = document.title;
+
+  async function api(path, options = {}) {
+    const r = await fetch(path, { ...options, headers: { "content-type": "application/json", "x-vale-session": token || "", ...(options.headers || {}) } });
+    if (!r.ok) throw Object.assign(new Error("http " + r.status), { status: r.status });
+    return r.json();
+  }
+
+  function rich(parent, str) {
+    // Plain text only, with links and WhatsApp-style *bold*. Never innerHTML.
+    const re = /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)])|\*([^*\n]+)\*/g;
+    let at = 0, m;
+    while ((m = re.exec(str))) {
+      if (m.index > at) parent.append(str.slice(at, m.index));
+      if (m[1]) { const a = document.createElement("a"); a.href = m[1]; a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = m[1]; parent.append(a); }
+      else { const b = document.createElement("strong"); b.textContent = m[2]; parent.append(b); }
+      at = re.lastIndex;
+    }
+    if (at < str.length) parent.append(str.slice(at));
+  }
+
+  function setTyping(on) {
+    if (on && !typingEl) { typingEl = document.createElement("div"); typingEl.className = "typing"; typingEl.innerHTML = "<i></i><i></i><i></i>"; log.append(typingEl); scroll(); }
+    if (!on && typingEl) { typingEl.remove(); typingEl = null; }
+  }
+  const scroll = () => { log.scrollTop = log.scrollHeight; };
+
+  function render(m) {
+    const el = document.createElement("div");
+    el.className = "msg " + (m.from === "vale" ? "vale" : "me");
+    const label = m.kind === "image" ? T.photo : m.kind === "document" ? T.pdf : m.kind === "audio" ? T.audio : "";
+    rich(el, [label, m.text].filter(Boolean).join("\n"));
+    if (m.buttons && m.buttons.length) {
+      const row = document.createElement("div"); row.className = "choices";
+      for (const b of m.buttons) {
+        const btn = document.createElement("button"); btn.type = "button"; btn.textContent = b.label;
+        btn.addEventListener("click", () => { row.querySelectorAll("button").forEach((x) => (x.disabled = true)); post({ button_id: b.id, button_label: b.label }); });
+        row.append(btn);
+      }
+      el.append(row);
+    }
+    const t = document.createElement("time"); const d = new Date(m.at);
+    t.textContent = isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); el.append(t);
+    if (typingEl) log.insertBefore(el, typingEl); else log.append(el);
+  }
+
+  function alertUser(m) {
+    if (!document.hidden) return;
+    unseen += 1; document.title = "(" + unseen + ") " + baseTitle;
+    try { if ("Notification" in window && Notification.permission === "granted") new Notification(T.fresh, { body: (m.text || "").slice(0, 120), tag: "vale" }); } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { unseen = 0; document.title = baseTitle; poll(); } });
+
+  let pollTimer = null, polling = false;
+  async function poll() {
+    clearTimeout(pollTimer);
+    if (polling || !token) return;
+    polling = true;
+    try {
+      const { messages } = await api("/chat/api/messages?after=" + lastId);
+      const first = lastId === 0;
+      for (const m of messages) {
+        lastId = Math.max(lastId, m.id); render(m);
+        if (m.from === "vale") { waiting = 0; if (!first) alertUser(m); }
+      }
+      setTyping(waiting > 0 && Date.now() - waiting < 90000);
+      if (messages.length) scroll();
+      failures = 0; statusEl.textContent = "";
+    } catch (e) {
+      failures += 1;
+      if (e.status === 401) { token = null; await begin(true); }
+      else if (failures > 2) statusEl.textContent = e.status === 429 ? T.slow : T.offline;
+    } finally {
+      polling = false;
+      const delay = document.hidden ? 20000 : waiting ? 1500 : 5000;
+      pollTimer = setTimeout(poll, Math.min(delay * (1 + Math.min(failures, 5)), 60000));
+    }
+  }
+
+  async function post(body) {
+    try {
+      await api("/chat/api/send", { method: "POST", body: JSON.stringify(body) });
+      waiting = Date.now(); statusEl.textContent = ""; setTyping(true); poll();
+      return true;
+    } catch (e) {
+      statusEl.textContent = e.status === 429 ? T.slow : e.status === 413 ? T.big : e.status === 415 ? T.type : T.offline;
+      return false;
+    }
+  }
+
+  async function begin(fresh) {
+    token = fresh ? null : store.get();
+    if (!token) {
+      try { token = (await api("/chat/api/session", { method: "POST" })).token; }
+      catch (e) { statusEl.textContent = e.status === 429 ? T.slow : T.offline; setTimeout(() => begin(fresh), 8000); return; }
+      store.set(token); lastId = 0;
+      await post({ text: T.hello, hidden: true });  // opens the conversation in the visitor's language
+    }
+    poll();
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const value = text.value.trim();
+    if (!value) return;
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch {}
+    text.value = ""; grow();
+    if (!(await post({ text: value }))) { text.value = value; grow(); }
+  });
+  text.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+  const grow = () => { text.style.height = "auto"; text.style.height = Math.min(text.scrollHeight + 4, 140) + "px"; };
+  text.addEventListener("input", grow);
+
+  const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(blob); });
+  async function shrink(f) {
+    // Phone photos are large; a 2000px JPEG is plenty to read a document.
+    if (!f.type.startsWith("image/")) return f;
+    try {
+      const img = await createImageBitmap(f);
+      const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise((res) => c.toBlob((b) => res(b || f), "image/jpeg", 0.88));
+    } catch { return f; }
+  }
+  $("attach").addEventListener("click", () => file.click());
+  file.addEventListener("change", async () => {
+    const f = file.files[0]; file.value = "";
+    if (!f) return;
+    const blob = await shrink(f);
+    if (blob.size > 6 * 1024 * 1024) { statusEl.textContent = T.big; return; }
+    await post({ media: { b64: await toB64(blob), mime: blob.type || f.type } });
+  });
+
+  let recorder = null, chunks = [];
+  if (!(navigator.mediaDevices && window.MediaRecorder)) mic.hidden = true;
+  mic.addEventListener("click", async () => {
+    if (recorder) { recorder.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = ["audio/webm", "audio/mp4", "audio/ogg"].find((m) => MediaRecorder.isTypeSupported(m)) || "";
+      recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); chunks = [];
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const type = (recorder.mimeType || mime || "audio/webm").split(";")[0];
+        recorder = null; mic.classList.remove("rec"); mic.setAttribute("aria-label", T.mic); mic.title = T.mic;
+        const blob = new Blob(chunks, { type });
+        if (blob.size > 1000) await post({ media: { b64: await toB64(blob), mime: type } });
+      };
+      recorder.start(); mic.classList.add("rec"); mic.setAttribute("aria-label", T.stop); mic.title = T.stop;
+      setTimeout(() => recorder && recorder.state === "recording" && recorder.stop(), 120000);
+    } catch { statusEl.textContent = T.nomic; }
+  });
+
+  begin(false);
+})();
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -56,14 +57,27 @@ def engine():
     return _engine
 
 
+_current: ContextVar[AsyncSession | None] = ContextVar("vale_session", default=None)
+
+
+def current_session() -> AsyncSession | None:
+    """The session of the unit of work running right now, if any. Code that must write while a
+    caller's transaction is open joins it instead of opening a second connection, which SQLite
+    (one writer at a time) would make wait until it times out."""
+    return _current.get()
+
+
 @asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
     if _sessionmaker is None:
         init_engine()
     async with _sessionmaker() as session:
+        token = _current.set(session)
         try:
             yield session
             await session.commit()
         except Exception:
             await session.rollback()
             raise
+        finally:
+            _current.reset(token)

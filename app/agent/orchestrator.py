@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit, llm
-from app.agent.prompts import SYSTEM_PROMPT
+from app.agent.prompts import SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
 from app.citas import service
 from app.citas.catalog import PROVINCES, TRAMITES, find_province
 from app.config import get_settings
@@ -51,6 +51,11 @@ TOOLS = [
         "name": "save_contact_email",
         "description": "Store the email where the government sends the appointment receipt, when the user gives it.",
         "input_schema": {"type": "object", "properties": {"email": {"type": "string"}}, "required": ["email"]},
+    },
+    {
+        "name": "save_contact_phone",
+        "description": "Store the mobile number the government can reach the user on. Only needed when 'phone' is listed as missing (website chat users).",
+        "input_schema": {"type": "object", "properties": {"phone": {"type": "string", "description": "Digits, with country code if not Spanish"}}, "required": ["phone"]},
     },
     {
         "name": "submit_personal_data",
@@ -98,7 +103,7 @@ class Agent:
                 province = find_province(args.get("province", "")) or args.get("province", "")
                 req = await service.create_request(session, user, province, args.get("tramite_code", ""))
                 profile = await service.get_profile(session, user.id)
-                out = {"request_id": req.id, "state": req.state.value, "missing": service.missing_fields(profile, req.tramite_code)}
+                out = {"request_id": req.id, "state": req.state.value, "missing": service.missing_fields(profile, req.tramite_code, user.phone)}
                 if req.state.value == "awaiting_payment":
                     out["note"] = "The activation payment link is sent automatically in a separate message within seconds. Monitoring starts once it is paid."
                 return out
@@ -108,7 +113,7 @@ class Agent:
                     "has_email": bool(profile.get("email")),
                     "requests": [
                         {"request_id": r.id, "province": r.province, "tramite": r.tramite_code, "state": r.state.value,
-                         "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code),
+                         "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code, user.phone),
                          **({"payment_link": r.activation_link_url} if r.state.value == "awaiting_payment" and r.activation_link_url
                             and r.activation_link_url.startswith("http") else {})}
                         for r in await service.active_requests(session, user.id)
@@ -123,6 +128,12 @@ class Agent:
                     return {"error": "invalid_email"}
                 await service.set_contact_email(session, user, email)
                 return {"saved": True}
+            if name == "save_contact_phone":
+                digits = "".join(c for c in str(args.get("phone", "")) if c.isdigit())
+                if not 9 <= len(digits) <= 15:
+                    return {"error": "invalid_phone"}
+                promoted = await service.set_contact_phone(session, user, digits)
+                return {"saved": True, "now_monitoring": [r.id for r in promoted]}
             if name == "submit_personal_data":
                 if on_data is None:
                     return {"error": "not_available"}
@@ -154,6 +165,7 @@ class Agent:
                     on_data: Callable[[dict], Awaitable[None]] | None = None) -> str:
         system = SYSTEM_PROMPT.format(
             lang=user.lang,
+            channel=WEB_NOTE.format(ttl=get_settings().offer_ttl_minutes) if service.is_web(user.phone) else WHATSAPP_NOTE,
             provinces=", ".join(PROVINCES.values()),
             tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['pt'])}" for t in TRAMITES.values()),
         )

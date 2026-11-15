@@ -160,3 +160,16 @@ class SiteState(Base):
     paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pause_reason: Mapped[str | None] = mapped_column(String(64))
     visits: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class WebMessage(Base):
+    """A message of the website chat (the second channel next to WhatsApp). The body is encrypted:
+    read-backs carry personal data. Deleted with the user and after WEB_HISTORY_DAYS."""
+
+    __tablename__ = "web_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_key: Mapped[str] = mapped_column(String(32), index=True)  # same value as users.phone ("web:...")
+    direction: Mapped[str] = mapped_column(String(3))  # in | out
+    body_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

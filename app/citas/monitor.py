@@ -14,6 +14,7 @@ Scaling model
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 
 from sqlalchemy.orm import selectinload
@@ -51,6 +52,7 @@ class Monitor:
         self.provider = provider
         self.site = site
         self.sem = asyncio.Semaphore(get_settings().monitor_max_concurrency)
+        self._last_cleanup = float("-inf")
 
     # ---------- pauses (shared by every process through the database) ----------
 
@@ -109,7 +111,13 @@ class Monitor:
         """Messages that don't touch the government site: payment links and reminders."""
         from app import billing, notifications
 
-        for job in (billing.send_pending_links, notifications.send_reminders):
+        jobs = [billing.send_pending_links, notifications.send_reminders]
+        if time.monotonic() - self._last_cleanup > 6 * 3600:  # also covers setups without the worker's cron
+            from app import maintenance
+
+            self._last_cleanup = time.monotonic()
+            jobs.append(maintenance.cleanup)
+        for job in jobs:
             try:
                 await job()
             except Exception:
@@ -131,7 +139,8 @@ class Monitor:
                 req = await s.get(CitaRequest, request_id, options=[selectinload(CitaRequest.user)])
                 if not req or req.state != RequestState.monitoring:
                     return
-                profile = {**await service.get_profile(s, req.user_id), "phone": req.user.phone}
+                profile = await service.get_profile(s, req.user_id)
+                profile = {**profile, "phone": service.gov_phone(req.user.phone, profile)}
                 province, tramite, phone, lang = req.province, req.tramite_code, req.user.phone, req.user.lang
 
             result = await self.provider.check(request_id, province, tramite, profile)
@@ -147,8 +156,6 @@ class Monitor:
                 await service.mark_checked(s, req, outcome)
                 if group and result.status != "slots":
                     await service.mark_group_checked(s, group, outcome, via=request_id)
-                if result.reason in ("tls_untrusted", "blocked_by_site"):
-                    await self._pause(result.reason, request_id)
                 if result.status == "slots" and result.slots:
                     slot = result.slots[0]
                     offer = await service.create_offer(s, req, slot.office, slot.starts_at, {**slot.raw, "hold_key": result.hold_key})
@@ -164,6 +171,9 @@ class Monitor:
                 elif result.status == "needs_human":
                     await service.mark_needs_human(s, req, result.reason)
                     needs_human = True
+            # After the transaction: these write through their own sessions.
+            if result.reason in ("tls_untrusted", "blocked_by_site"):
+                await self._pause(result.reason, request_id)
             if needs_human:
                 await _notify(phone, t("needs_human", lang, url=self.provider.public_url))
 
@@ -190,20 +200,22 @@ class Monitor:
                 return  # site paused: approval stays valid until the offer expires
             async with session_scope() as s:
                 profile = await service.get_profile(s, (await s.get(CitaRequest, request_id)).user_id)
-            result = await self.provider.book(request_id, Slot(office, starts_at, raw), profile, phone, hold_key)
-            message = None
+            result = await self.provider.book(request_id, Slot(office, starts_at, raw), profile, service.gov_phone(phone, profile), hold_key)
+            message = pause_reason = None
             async with session_scope() as s:
                 req = await s.get(CitaRequest, request_id)
                 if result.status == "booked":
                     await service.mark_booked(s, req, result.reference)
                     message = t("booked", lang, office=office, starts_at=starts_at, reference=result.reference or "")
                 elif result.reason in ("tls_untrusted", "blocked_by_site"):
-                    await self._pause(result.reason, request_id)
+                    pause_reason = result.reason
                 elif result.status == "slot_gone":
                     req.state = RequestState.monitoring
                     message = t("offer_expired", lang)
                 else:
                     await service.mark_needs_human(s, req, result.reason or result.status)
                     message = t("needs_human", lang, url=self.provider.public_url)
+            if pause_reason:
+                await self._pause(pause_reason, request_id)
             if message:  # sent after the result is saved: a booked cita is never lost to a failed message
                 await _notify(phone, message)

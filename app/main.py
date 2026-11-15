@@ -25,6 +25,10 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Vale", lifespan=lifespan)
 
+from app.web_chat import router as web_chat_router  # noqa: E402
+
+app.include_router(web_chat_router)
+
 
 @app.get("/health")
 async def health() -> dict:

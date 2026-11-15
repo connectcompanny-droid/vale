@@ -18,7 +18,7 @@ from app.citas.catalog import PROVINCES, TRAMITES
 from app.config import get_settings
 from app.crypto import decrypt_json, encrypt_json
 from app.documents.extractor import ExtractedDocument
-from app.models import ACTIVE_STATES, AuditEvent, CitaRequest, Document, OfferState, RequestState, SlotOffer, User
+from app.models import ACTIVE_STATES, AuditEvent, CitaRequest, Document, OfferState, RequestState, SlotOffer, User, WebMessage
 
 
 class RuleError(Exception):
@@ -59,6 +59,7 @@ async def delete_user_data(session: AsyncSession, user: User) -> None:
         await session.execute(delete(SlotOffer).where(SlotOffer.request_id.in_(req_ids)))
     await session.execute(delete(CitaRequest).where(CitaRequest.user_id == uid))
     await session.execute(delete(Document).where(Document.user_id == uid))
+    await session.execute(delete(WebMessage).where(WebMessage.user_key == user.phone))
     await session.execute(update(AuditEvent).where(AuditEvent.user_id == uid).values(user_id=None, detail={}))
     await session.delete(user)
     audit.record(session, "user_deleted")
@@ -122,6 +123,13 @@ async def set_contact_email(session: AsyncSession, user: User, email: str) -> No
     audit.record(session, "contact_email_set", user.id)
 
 
+async def set_contact_phone(session: AsyncSession, user: User, phone: str) -> list[CitaRequest]:
+    session.add(Document(user_id=user.id, kind="contact", source="contact", confirmed=True, payload_encrypted=encrypt_json({"phone": phone})))
+    audit.record(session, "contact_phone_set", user.id)
+    await session.flush()
+    return await promote_ready_requests(session, user)
+
+
 async def get_profile(session: AsyncSession, user_id: int) -> dict:
     """Merge the user's CONFIRMED documents (newest wins) into one decrypted profile."""
     docs = (await session.scalars(
@@ -135,15 +143,29 @@ async def get_profile(session: AsyncSession, user_id: int) -> dict:
     return profile
 
 
-def missing_fields(profile: dict, tramite_code: str) -> list[str]:
-    return [f for f in TRAMITES[tramite_code].needs if not profile.get(f)]
+def is_web(phone: str | None) -> bool:
+    return bool(phone) and phone.startswith("web:")
 
 
-def ready_state(req_or_paid, profile: dict, tramite_code: str) -> RequestState:
+def missing_fields(profile: dict, tramite_code: str, user_phone: str | None = None) -> list[str]:
+    """Fields still needed. The government form asks for a phone number: WhatsApp clients already
+    have one, website clients must give it."""
+    missing = [f for f in TRAMITES[tramite_code].needs if not profile.get(f)]
+    if is_web(user_phone) and not profile.get("phone"):
+        missing.append("phone")
+    return missing
+
+
+def gov_phone(user_phone: str, profile: dict) -> str:
+    """The number typed into the government form."""
+    return str(profile.get("phone") or "") if is_web(user_phone) else user_phone
+
+
+def ready_state(req_or_paid, profile: dict, tramite_code: str, user_phone: str | None = None) -> RequestState:
     """Where a request should be given the client's data: missing data, unpaid activation, or watching."""
     from app import billing
 
-    if missing_fields(profile, tramite_code):
+    if missing_fields(profile, tramite_code, user_phone):
         return RequestState.awaiting_documents
     paid = bool(getattr(req_or_paid, "activation_paid_at", None))
     if billing.enabled() and not paid:
@@ -158,7 +180,7 @@ async def promote_ready_requests(session: AsyncSession, user: User) -> list[Cita
     )).all()
     promoted = []
     for req in waiting:
-        state = ready_state(req, profile, req.tramite_code)
+        state = ready_state(req, profile, req.tramite_code, user.phone)
         if state == RequestState.monitoring:
             req.state = state
             audit.record(session, "monitoring_started", user.id, req.id)
@@ -188,7 +210,7 @@ async def create_request(session: AsyncSession, user: User, province: str, trami
         if r.tramite_code == tramite_code:
             raise RuleError("already_active_for_this_tramite")
     profile = await get_profile(session, user.id)
-    state = ready_state(None, profile, tramite_code)
+    state = ready_state(None, profile, tramite_code, user.phone)
     req = CitaRequest(user_id=user.id, province=province, tramite_code=tramite_code, state=state, active_key="1")
     session.add(req)
     await session.flush()

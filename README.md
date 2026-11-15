@@ -143,3 +143,17 @@ Quantas pessoas se interessaram aparece no painel (`/admin`), para decidir se va
 
 `run_local.ps1` cria o `ADMIN_TOKEN` na primeira execução e deixa o atalho **Vale painel** na pasta do
 projeto: dois cliques abrem o painel (só funciona neste computador, com o Vale ligado).
+
+## Chat no site (segundo canal)
+
+O mesmo Vale atende por dois canais ao mesmo tempo: WhatsApp e um chat em forma de site, em `/chat`.
+O cliente escolhe por onde entra; consentimento, conferência dos dados, ofertas de vaga e o certificado
+digital funcionam igual nos dois. No chat do site há botões de verdade, envio de foto/PDF e gravação de áudio.
+
+- Cada visitante é identificado por um código guardado no navegador dele; o servidor guarda só o hash.
+- As mensagens do chat ficam criptografadas, são apagadas com "apaga tudo" e depois de `WEB_HISTORY_DAYS` (30).
+- O formulário do governo pede um telefone: quem entra pelo site informa um número na conversa.
+- Limite: quem usa só o site vê o aviso de vaga apenas com a página aberta (ela notifica e mostra um contador
+  na aba). Para aviso no celular, o caminho é o WhatsApp (botão no topo do chat, com `WHATSAPP_NUMBER`).
+- Para abrir o chat ao público a partir do PC, defina `NGROK_DOMAIN` no `.env` (domínio estático gratuito do
+  ngrok). O endereço fica `https://SEU-DOMINIO/chat`. O painel `/admin` continua protegido pelo token.

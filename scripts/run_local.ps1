@@ -37,6 +37,12 @@ Start-Sleep -Seconds 5
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale monitor'; & '$py' run_monitor.py"
 Write-Host "Vale API on http://127.0.0.1:8000  (check: curl http://127.0.0.1:8000/health)"
 Write-Host "Operator panel: double-click 'Vale painel' in the project folder."
-if ($envText -notmatch "(?m)^\s*WHATSAPP_PROVIDER\s*=\s*evolution") {
-    Write-Host "Now expose it with ngrok in another window:  ngrok http --url=SEU-DOMINIO.ngrok-free.app 8000"
+Write-Host "Website chat on this computer: http://127.0.0.1:8000/chat"
+# Public address for the website chat (and for UAZAPI/Stripe webhooks): set NGROK_DOMAIN in .env.
+$ngrokDomain = ([regex]::Match($envText, "(?im)^\s*NGROK_DOMAIN\s*=\s*(\S+)")).Groups[1].Value
+if ($ngrokDomain -and (Get-Command ngrok -ErrorAction SilentlyContinue)) {
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale public address'; ngrok http --url=$ngrokDomain 8000"
+    Write-Host "Public chat: https://$ngrokDomain/chat"
+} else {
+    Write-Host "To open the chat to clients, set NGROK_DOMAIN=your-domain.ngrok-free.app in .env (free ngrok account) and start again."
 }

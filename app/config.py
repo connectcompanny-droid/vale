@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     evolution_api_key: str = ""
     evolution_instance: str = "vale"
 
+    # Website chat (second channel). Served by the API at /chat.
+    web_chat_enabled: bool = True
+    web_history_days: int = 30
+    # Vale's WhatsApp number, digits only with country code: shown on the chat page as the other way in.
+    whatsapp_number: str = ""
+
     uazapi_base_url: str = ""
     uazapi_instance_token: str = ""
     webhook_secret: str = ""
