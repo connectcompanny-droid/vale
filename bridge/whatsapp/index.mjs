@@ -27,6 +27,18 @@ import makeWASocket, {
 import pino from "pino";
 import QRCode from "qrcode";
 
+// The Signal library prints whole session records (including private keys) with console.info /
+// console.log when sessions rotate. Those must never reach the screen or the log file.
+const SECRET_NOISE = /^(Closing session|Opening session|Removing old closed session|Migrating session|Session already|Decrypted message with closed session|Closing open session)/;
+for (const level of ["log", "info", "warn"]) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    if (typeof args[0] === "string" && SECRET_NOISE.test(args[0])) return;
+    if (args.some((a) => a && typeof a === "object" && ("_chains" in a || "currentRatchet" in a))) return;
+    original(...args);
+  };
+}
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.join(here, ".env"));
 
