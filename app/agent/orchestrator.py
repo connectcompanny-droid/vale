@@ -92,14 +92,19 @@ class Agent:
                 province = find_province(args.get("province", "")) or args.get("province", "")
                 req = await service.create_request(session, user, province, args.get("tramite_code", ""))
                 profile = await service.get_profile(session, user.id)
-                return {"request_id": req.id, "state": req.state.value, "missing": service.missing_fields(profile, req.tramite_code)}
+                out = {"request_id": req.id, "state": req.state.value, "missing": service.missing_fields(profile, req.tramite_code)}
+                if req.state.value == "awaiting_payment":
+                    out["note"] = "The activation payment link is sent automatically in a separate message within seconds. Monitoring starts once it is paid."
+                return out
             if name == "get_my_status":
                 profile = await service.get_profile(session, user.id)
                 return {
                     "has_email": bool(profile.get("email")),
                     "requests": [
                         {"request_id": r.id, "province": r.province, "tramite": r.tramite_code, "state": r.state.value,
-                         "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code)}
+                         "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code),
+                         **({"payment_link": r.activation_link_url} if r.state.value == "awaiting_payment" and r.activation_link_url
+                            and r.activation_link_url.startswith("http") else {})}
                         for r in await service.active_requests(session, user.id)
                     ],
                 }

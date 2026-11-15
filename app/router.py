@@ -87,7 +87,7 @@ async def _handle(msg: IncomingMessage) -> None:
                 await ch.send_text(msg.phone, t("consent_declined", lang))
                 return
             if user.consent_at is None:
-                await ch.send_buttons(msg.phone, t("consent", lang), [
+                await ch.send_buttons(msg.phone, _consent_text(lang), [
                     Button("consent:yes", t("consent_yes", lang)), Button("consent:no", t("consent_no", lang)),
                 ])
                 return
@@ -162,6 +162,16 @@ async def _handle(msg: IncomingMessage) -> None:
             await ch.send_text(msg.phone, t("error", "pt"))
         except Exception:
             log.exception("failed to send error message")
+
+
+def _consent_text(lang: str) -> str:
+    from app.config import get_settings
+
+    cfg = get_settings()
+    text = t("consent", lang)
+    if cfg.terms_url or cfg.privacy_url:
+        text += t("consent_links", lang, terms=cfg.terms_url or "-", privacy=cfg.privacy_url or "-")
+    return text
 
 
 async def _ask_delete(phone: str, lang: str) -> None:

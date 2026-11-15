@@ -79,7 +79,11 @@ class FakeProvider(CitaProvider):
 async def fresh_db(tmp_path):
     from app.voice.tts import NoSynthesizer, set_synthesizer
 
-    db.init_engine(f"sqlite+aiosqlite:///{tmp_path}/t.db")
+    url = os.environ.get("TEST_DATABASE_URL")  # optional: run the suite on a real Postgres
+    db.init_engine(url or f"sqlite+aiosqlite:///{tmp_path}/t.db")
+    if url:
+        async with db.engine().begin() as conn:
+            await conn.run_sync(db.Base.metadata.drop_all)
     await db.create_all()
     set_synthesizer(NoSynthesizer())
     yield

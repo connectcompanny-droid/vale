@@ -78,6 +78,24 @@ class Settings(BaseSettings):
     # Vale never tries to evade it (no proxy rotation, no fingerprint spoofing).
     blocked_pause_minutes: int = 360
 
+    # Public address of this API (e.g. https://vale.up.railway.app); used for payment return pages.
+    public_base_url: str = ""
+    # Legal texts linked from the consent message (shown only when set).
+    terms_url: str = ""
+    privacy_url: str = ""
+    # Operator dashboard /admin/summary?token=... (disabled when empty).
+    admin_token: str = ""
+
+    # Billing with Stripe Checkout. Empty STRIPE_SECRET_KEY = free beta: no payment step at all.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    activation_fee_cents: int = 990   # charged before monitoring starts
+    success_fee_cents: int = 2900     # charged after the cita is booked
+    founder_slots: int = 50           # first N paying clients get the founder discount
+    founder_discount_pct: int = 50
+    # Day-before reminder is sent from this local hour on (Europe/Madrid).
+    reminder_hour: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -41,8 +41,16 @@ run_monitor.py ── app/citas/monitor.py ── provider ICP (Playwright) ─�
 
 ### Estados do pedido
 
-`awaiting_documents → monitoring → offer_pending → booking → booked`
-com saídas para `needs_human`, `cancelled` e `failed`.
+`awaiting_documents → awaiting_payment → monitoring → offer_pending → booking → booked`
+com saídas para `needs_human`, `cancelled` e `failed`. O `awaiting_payment` só existe com a cobrança ligada.
+
+### Cobrança, lembretes e painel
+
+- **Cobrança (Stripe Checkout).** Com `STRIPE_SECRET_KEY` vazio o Vale roda como **beta grátis**. Com a chave, o pedido com dados completos vai para `awaiting_payment`, o cliente recebe no WhatsApp o link da ativação (€9,90; 50% para os primeiros `FOUNDER_SLOTS`), e a vigilância começa quando a Stripe confirma em `/webhook/stripe` (assinatura verificada). Depois da reserva, vai o link da taxa de sucesso (€29). Clientes do beta grátis nunca são cobrados depois. Código em `app/billing.py`.
+- **Lembrete na véspera** a partir de `REMINDER_HOUR` (hora de Madri) e **aviso de pausa** quando o site bloqueia ou dá erro de certificado (no máximo um por dia por pessoa). Código em `app/notifications.py`. Os dois rodam no monitor e nunca são enviados em dobro.
+- **Termos e privacidade** aparecem na mensagem de consentimento quando `TERMS_URL`/`PRIVACY_URL` estão definidos.
+- **Painel:** `/admin?token=ADMIN_TOKEN` (página) ou `/admin/summary?token=...` (JSON): usuários, pedidos por estado, pagamentos, estado do site e últimos pedidos com telefone mascarado.
+- **Migrações:** `python scripts/migrate.py` (também atualiza bancos locais antigos). Em Docker/Railway, `alembic upgrade head` roda sozinho.
 
 ### Regras de proteção (em código, não só no prompt)
 
@@ -102,8 +110,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## Próximos passos
 
-- Lembrete na véspera da cita e lista do que levar.
 - Preferências do usuário (escritório, dias, horários).
 - Encaminhamento para advogado parceiro (G7 Migration) quando o caso for jurídico.
-- Página de status para o usuário e painel admin.
+- Reembolso automático da garantia de 60 dias (hoje é manual, pelo painel da Stripe).
 - Canal reserva (Telegram/SMS).

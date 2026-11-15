@@ -108,6 +108,46 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "He tenido un problema. Ya lo estoy mirando; inténtalo en un momento.",
         "en": "I hit a problem. I'm on it; please try again shortly.",
     },
+    "consent_links": {
+        "pt": "\n\nTermos: {terms}\nPrivacidade: {privacy}",
+        "es": "\n\nCondiciones: {terms}\nPrivacidad: {privacy}",
+        "en": "\n\nTerms: {terms}\nPrivacy: {privacy}",
+    },
+    "activation_link": {
+        "pt": "Seus dados estão completos ✓\n\nPara eu começar a vigiar as vagas de {tramite}, falta a ativação: {price}.\n{founder}Pague aqui com cartão (pagamento seguro pela Stripe):\n{url}\n\nAssim que o pagamento cair, eu começo. Se em 60 dias eu não conseguir nenhuma cita, devolvo a ativação.",
+        "es": "Tus datos están completos ✓\n\nPara empezar a vigilar los huecos de {tramite}, falta la activación: {price}.\n{founder}Paga aquí con tarjeta (pago seguro con Stripe):\n{url}\n\nEn cuanto entre el pago, empiezo. Si en 60 días no consigo ninguna cita, te devuelvo la activación.",
+        "en": "Your details are complete ✓\n\nTo start watching for {tramite} slots, the activation is due: {price}.\n{founder}Pay here by card (secure payment via Stripe):\n{url}\n\nAs soon as the payment lands, I start. If I can't get you a cita within 60 days, the activation is refunded.",
+    },
+    "founder_note": {
+        "pt": "🎁 Você é um dos primeiros clientes: 50% de desconto de fundador.\n",
+        "es": "🎁 Eres de los primeros clientes: 50% de descuento de fundador.\n",
+        "en": "🎁 You're one of our first clients: 50% founder discount.\n",
+    },
+    "activation_paid": {
+        "pt": "Pagamento confirmado ✓ Já estou vigiando as vagas. Te aviso aqui assim que abrir uma. Você não precisa fazer nada.",
+        "es": "Pago confirmado ✓ Ya estoy vigilando los huecos. Te aviso por aquí en cuanto salga uno. No tienes que hacer nada.",
+        "en": "Payment confirmed ✓ I'm now watching for slots and will message you here as soon as one opens. Nothing else to do.",
+    },
+    "success_link": {
+        "pt": "Agora falta só a taxa de sucesso ({price}), cobrada porque a cita foi conseguida:\n{url}\nObrigado por confiar no Vale 💙",
+        "es": "Ahora solo falta la tarifa de éxito ({price}), que se cobra porque la cita se consiguió:\n{url}\nGracias por confiar en Vale 💙",
+        "en": "All that's left is the success fee ({price}), charged because the cita was secured:\n{url}\nThanks for trusting Vale 💙",
+    },
+    "success_paid": {
+        "pt": "Pagamento recebido ✓ Obrigado! Boa sorte na sua cita.",
+        "es": "Pago recibido ✓ ¡Gracias! Mucha suerte en tu cita.",
+        "en": "Payment received ✓ Thank you! Good luck at your appointment.",
+    },
+    "reminder": {
+        "pt": "⏰ Lembrete: sua cita é amanhã.\n\n📍 {office}\n🗓 {starts_at}\n\nLeve o passaporte original, o justificante e chegue uns 10 minutos antes. Boa sorte!",
+        "es": "⏰ Recordatorio: tu cita es mañana.\n\n📍 {office}\n🗓 {starts_at}\n\nLleva el pasaporte original y el justificante, y llega unos 10 minutos antes. ¡Suerte!",
+        "en": "⏰ Reminder: your appointment is tomorrow.\n\n📍 {office}\n🗓 {starts_at}\n\nBring your original passport and the receipt, and arrive about 10 minutes early. Good luck!",
+    },
+    "site_paused": {
+        "pt": "Aviso rápido: o site de cita previa está limitando acessos neste momento. Faço uma pausa de umas {hours} h e volto a vigiar sozinho. Você não precisa fazer nada; seu lugar na fila continua.",
+        "es": "Aviso rápido: la web de cita previa está limitando accesos ahora mismo. Hago una pausa de unas {hours} h y vuelvo a vigilar solo. No tienes que hacer nada; mantienes tu turno.",
+        "en": "Quick note: the cita previa site is limiting access right now. I'm pausing for about {hours} h and will resume watching on my own. Nothing to do on your side; you keep your place in line.",
+    },
 }
 
 

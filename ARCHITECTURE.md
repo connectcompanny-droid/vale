@@ -112,5 +112,5 @@ E, principalmente: **o Vale só reserva as vagas que o governo libera.** Com 10.
 1. Validar a segunda metade do fluxo de Granada (`scripts/try_icp.py --check`), uma vez, depois que o bloqueio passar.
 2. Validação jurídica com advogado de extranjería.
 3. Adaptador da Meta Cloud API.
-4. Aviso ao cliente quando o site estiver pausado (no máximo uma vez por dia).
-5. Painel de operação (pedidos, fila, bloqueios), aproveitando `/metrics`.
+4. ~~Aviso ao cliente quando o site estiver pausado~~ (feito: `app/notifications.py`).
+5. ~~Painel de operação~~ (feito: `/admin?token=...`).

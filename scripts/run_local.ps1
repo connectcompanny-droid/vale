@@ -7,6 +7,11 @@ $py = Join-Path $root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { throw "venv not found: create it with  py -3.12 -m venv .venv" }
 if (-not (Test-Path (Join-Path $root ".env"))) { throw ".env not found: copy .env.local.example to .env and fill it" }
 
+Push-Location $root
+& $py scripts\migrate.py
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Database migration failed (see the message above)" }
+Pop-Location
+
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale API'; & '$py' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 Start-Sleep -Seconds 5
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale monitor'; & '$py' run_monitor.py"

@@ -32,6 +32,10 @@ US$ 15 a 20/mês pela tabela da Railway. Confira em **Usage** depois da primeira
 | `STT_API_URL`, `STT_API_KEY`, `STT_MODEL` | Groq ou OpenAI |
 | `TTS_PROVIDER` | `none` |
 | `LOG_JSON` | `true` |
+| `PUBLIC_BASE_URL` | o endereço do `api` (passo 3), ex.: `https://vale-api.up.railway.app` |
+| `ADMIN_TOKEN` | gerado (painel em `/admin?token=...`) |
+| `TERMS_URL`, `PRIVACY_URL` | links dos termos e da política de privacidade |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | deixe vazios no beta grátis; veja "Cobrança" abaixo |
 
 O Vale converte sozinho o `postgresql://` da Railway para o driver assíncrono.
 
@@ -66,3 +70,11 @@ Depois siga as fases 6 a 9 do passo a passo (teste no WhatsApp, validação em G
 - Mais conversas: aumente as réplicas do `worker`. O `monitor` fica sempre com 1.
 - Backups: o Postgres da Railway tem backups no plano pago; exporte também com `pg_dump`
   periodicamente (os dados só servem junto com a `FERNET_KEY`).
+
+## Cobrança com Stripe (quando sair do beta grátis)
+
+1. Crie a conta em stripe.com e ative os pagamentos da empresa.
+2. **Developers > API keys**: copie a *Secret key* (`sk_test_...` para testar, `sk_live_...` em produção) para `STRIPE_SECRET_KEY`.
+3. **Developers > Webhooks > Add endpoint**: URL `https://SEU-API/webhook/stripe`, evento `checkout.session.completed`. Copie o *Signing secret* (`whsec_...`) para `STRIPE_WEBHOOK_SECRET`.
+4. Teste com a chave `sk_test_` e o cartão de teste `4242 4242 4242 4242`: o cliente recebe o link, paga, e o painel `/admin` mostra a ativação paga.
+5. Reembolsos da garantia de 60 dias: pelo painel da Stripe (Payments > o pagamento > Refund).

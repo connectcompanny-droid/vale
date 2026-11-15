@@ -44,6 +44,12 @@ class Monitor:
         s = get_settings()
         minutes = s.blocked_pause_minutes if reason == "blocked_by_site" else s.tls_pause_minutes
         until = await site_guard.pause(self.site, minutes, reason)
+        try:
+            from app.notifications import notify_pause
+
+            await notify_pause(max(1, round(minutes / 60)))
+        except Exception:
+            log.exception("could not notify clients about the pause")
         log.error("ALERT %s on request %s: site %s paused for every process until %s. "
                   "Never bypass it (no proxies, no captcha solving, no TLS bypass).", reason, request_id, self.site, until)
 
@@ -64,6 +70,7 @@ class Monitor:
     async def tick(self) -> None:
         await self.expire_offers()
         await self.provider.sweep()
+        await self.housekeeping()
         if await self.paused():
             return
         await self.book_approved()
@@ -78,6 +85,16 @@ class Monitor:
                     continue  # another process took it
             tasks.append(self.check_one(rep_id, others))
         await asyncio.gather(*tasks)
+
+    async def housekeeping(self) -> None:
+        """Messages that don't touch the government site: payment links and reminders."""
+        from app import billing, notifications
+
+        for job in (billing.send_pending_links, notifications.send_reminders):
+            try:
+                await job()
+            except Exception:
+                log.exception("%s failed", job.__name__)
 
     async def expire_offers(self) -> None:
         async with session_scope() as s:

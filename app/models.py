@@ -19,6 +19,7 @@ def utcnow() -> datetime:
 
 class RequestState(str, enum.Enum):
     awaiting_documents = "awaiting_documents"
+    awaiting_payment = "awaiting_payment"  # data complete; activation fee not paid yet (only when billing is on)
     monitoring = "monitoring"
     offer_pending = "offer_pending"  # a slot was found, waiting for the user's "vale"
     booking = "booking"
@@ -30,6 +31,7 @@ class RequestState(str, enum.Enum):
 
 ACTIVE_STATES = {
     RequestState.awaiting_documents,
+    RequestState.awaiting_payment,
     RequestState.monitoring,
     RequestState.offer_pending,
     RequestState.booking,
@@ -92,6 +94,15 @@ class CitaRequest(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     checks: Mapped[int] = mapped_column(Integer, default=0)
     note: Mapped[str | None] = mapped_column(Text)
+    # Billing (Stripe Checkout links). *_link_url: NULL = not sent yet; "sending" = claimed by a process.
+    founder: Mapped[bool] = mapped_column(Boolean, default=False)
+    activation_link_url: Mapped[str | None] = mapped_column(Text)
+    activation_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    success_link_url: Mapped[str | None] = mapped_column(Text)
+    success_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Notifications sent at most once (reminder) or once a day (site paused).
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    pause_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

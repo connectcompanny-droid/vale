@@ -139,6 +139,18 @@ def missing_fields(profile: dict, tramite_code: str) -> list[str]:
     return [f for f in TRAMITES[tramite_code].needs if not profile.get(f)]
 
 
+def ready_state(req_or_paid, profile: dict, tramite_code: str) -> RequestState:
+    """Where a request should be given the client's data: missing data, unpaid activation, or watching."""
+    from app import billing
+
+    if missing_fields(profile, tramite_code):
+        return RequestState.awaiting_documents
+    paid = bool(getattr(req_or_paid, "activation_paid_at", None))
+    if billing.enabled() and not paid:
+        return RequestState.awaiting_payment
+    return RequestState.monitoring
+
+
 async def promote_ready_requests(session: AsyncSession, user: User) -> list[CitaRequest]:
     profile = await get_profile(session, user.id)
     waiting = (await session.scalars(
@@ -146,10 +158,14 @@ async def promote_ready_requests(session: AsyncSession, user: User) -> list[Cita
     )).all()
     promoted = []
     for req in waiting:
-        if not missing_fields(profile, req.tramite_code):
-            req.state = RequestState.monitoring
+        state = ready_state(req, profile, req.tramite_code)
+        if state == RequestState.monitoring:
+            req.state = state
             audit.record(session, "monitoring_started", user.id, req.id)
             promoted.append(req)
+        elif state == RequestState.awaiting_payment:
+            req.state = state  # the monitor sends the payment link on its next tick
+            audit.record(session, "awaiting_payment", user.id, req.id)
     return promoted
 
 
@@ -172,7 +188,7 @@ async def create_request(session: AsyncSession, user: User, province: str, trami
         if r.tramite_code == tramite_code:
             raise RuleError("already_active_for_this_tramite")
     profile = await get_profile(session, user.id)
-    state = RequestState.monitoring if not missing_fields(profile, tramite_code) else RequestState.awaiting_documents
+    state = ready_state(None, profile, tramite_code)
     req = CitaRequest(user_id=user.id, province=province, tramite_code=tramite_code, state=state, active_key="1")
     session.add(req)
     await session.flush()

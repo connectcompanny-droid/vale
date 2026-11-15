@@ -39,7 +39,11 @@ class UazapiChannel(Channel):
         if payload.get("EventType") not in (None, "messages"):
             return None
         msg = payload.get("message") or {}
-        if not msg or msg.get("fromMe") or msg.get("isGroup"):
+        if not msg:
+            # Shape check for the first real deliveries: field names only, never content.
+            log.info("uazapi webhook without 'message': EventType=%r keys=%s", payload.get("EventType"), sorted(payload)[:20])
+            return None
+        if msg.get("fromMe") or msg.get("isGroup"):
             return None
         chat = msg.get("chatid") or msg.get("sender") or ""
         if chat.endswith("@g.us"):
