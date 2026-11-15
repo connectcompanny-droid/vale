@@ -1,0 +1,15 @@
+{
+  "name": "vale-whatsapp-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Free WhatsApp bridge for Vale (Baileys, Evolution API compatible)",
+  "main": "index.mjs",
+  "scripts": { "start": "node index.mjs" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "pino": "^9.7.0",
+    "qrcode": "^1.5.4"
+  }
+}

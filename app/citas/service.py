@@ -297,6 +297,15 @@ async def _owned_pending_offer(session: AsyncSession, user: User, offer_id: int)
     return offer
 
 
+async def latest_pending_offer_id(session: AsyncSession, user_id: int) -> int | None:
+    """The newest pending offer of this user (for clients answering an offer by typing)."""
+    return await session.scalar(
+        select(SlotOffer.id).join(CitaRequest, SlotOffer.request_id == CitaRequest.id)
+        .where(CitaRequest.user_id == user_id, SlotOffer.state == OfferState.pending)
+        .order_by(SlotOffer.id.desc()).limit(1)
+    )
+
+
 async def approve_offer(session: AsyncSession, user: User, offer_id: int) -> SlotOffer:
     """The only path to a booking: the user's explicit tap on Confirm."""
     offer = await _owned_pending_offer(session, user, offer_id)

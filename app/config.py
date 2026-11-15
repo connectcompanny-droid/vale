@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-5-5"
 
+    # WhatsApp provider: "uazapi" (paid) or "evolution" (free: Evolution API or Vale's own bridge in bridge/whatsapp).
+    whatsapp_provider: str = "uazapi"
+    evolution_base_url: str = "http://127.0.0.1:8081"
+    evolution_api_key: str = ""
+    evolution_instance: str = "vale"
+
     uazapi_base_url: str = ""
     uazapi_instance_token: str = ""
     webhook_secret: str = ""

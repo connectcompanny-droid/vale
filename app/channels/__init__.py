@@ -7,7 +7,14 @@ _channel: Channel | None = None
 def get_channel() -> Channel:
     global _channel
     if _channel is None:
-        _channel = UazapiChannel()
+        from app.config import get_settings
+
+        if get_settings().whatsapp_provider.lower() == "evolution":
+            from app.channels.evolution import EvolutionChannel
+
+            _channel = EvolutionChannel()
+        else:
+            _channel = UazapiChannel()
     return _channel
 
 

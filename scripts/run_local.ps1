@@ -12,8 +12,21 @@ Push-Location $root
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Database migration failed (see the message above)" }
 Pop-Location
 
+# Free WhatsApp bridge (bridge/whatsapp) when WHATSAPP_PROVIDER=evolution and Evolution points at this computer.
+$envText = Get-Content (Join-Path $root ".env") -Raw
+$bridge = Join-Path $root "bridge\whatsapp"
+if ($envText -match "(?m)^\s*WHATSAPP_PROVIDER\s*=\s*evolution" -and $envText -notmatch "(?m)^\s*EVOLUTION_BASE_URL\s*=\s*https?://(?!127\.0\.0\.1|localhost)") {
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw "Node.js 20+ is needed for the WhatsApp bridge: winget install OpenJS.NodeJS.LTS" }
+    if (-not (Test-Path (Join-Path $bridge ".env"))) { throw "bridge\whatsapp\.env not found: copy bridge\whatsapp\.env.example and fill it" }
+    if (-not (Test-Path (Join-Path $bridge "node_modules"))) { Push-Location $bridge; npm install --omit=dev; Pop-Location }
+    Start-Process powershell -WorkingDirectory $bridge -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale WhatsApp'; node index.mjs"
+    Write-Host "WhatsApp bridge on http://127.0.0.1:8081  (first time: open http://127.0.0.1:8081/qr and scan it with the phone)"
+}
+
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale API'; & '$py' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 Start-Sleep -Seconds 5
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale monitor'; & '$py' run_monitor.py"
 Write-Host "Vale API on http://127.0.0.1:8000  (check: curl http://127.0.0.1:8000/health)"
-Write-Host "Now expose it with ngrok in another window:  ngrok http --url=SEU-DOMINIO.ngrok-free.app 8000"
+if ($envText -notmatch "(?m)^\s*WHATSAPP_PROVIDER\s*=\s*evolution") {
+    Write-Host "Now expose it with ngrok in another window:  ngrok http --url=SEU-DOMINIO.ngrok-free.app 8000"
+}

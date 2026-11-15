@@ -114,3 +114,19 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 - Encaminhamento para advogado parceiro (G7 Migration) quando o caso for jurídico.
 - Reembolso automático da garantia de 60 dias (hoje é manual, pelo painel da Stripe).
 - Canal reserva (Telegram/SMS).
+
+## WhatsApp grátis (sem UAZAPI)
+
+`WHATSAPP_PROVIDER=evolution` usa a ponte gratuita em `bridge/whatsapp` (Node 20+, baseada no
+[Baileys](https://github.com/WhiskeySockets/Baileys), MIT). Ela fala a mesma API e o mesmo webhook da
+[Evolution API](https://github.com/EvolutionAPI/evolution-api), então dá para trocar por um servidor
+Evolution depois só mudando `EVOLUTION_BASE_URL` e `EVOLUTION_API_KEY`.
+
+1. `copy bridge\whatsapp\.env.example bridge\whatsapp\.env` e preencha `BRIDGE_API_KEY` (o mesmo valor em
+   `EVOLUTION_API_KEY` no `.env` do Vale) e o `WEBHOOK_SECRET` no `WEBHOOK_URL`.
+2. `.\scripts\run_local.ps1` abre a janela "Vale WhatsApp". Na primeira vez, abra http://127.0.0.1:8081/qr
+   e escaneie com o celular (WhatsApp > Aparelhos conectados).
+3. Tudo roda no mesmo computador: não precisa de ngrok.
+
+Use um número só para o Vale: APIs baseadas no WhatsApp Web não são oficiais e o número pode ser
+bloqueado se enviar mensagens em massa. O Vale só responde a quem escreve primeiro.

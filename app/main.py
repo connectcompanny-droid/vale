@@ -78,6 +78,20 @@ async def uazapi_webhook(request: Request, background: BackgroundTasks, secret: 
     return {"ok": True}
 
 
+@app.post("/webhook/evolution")
+async def evolution_webhook(request: Request, background: BackgroundTasks, secret: str = Query("")) -> dict:
+    """Evolution API, or Vale's free bridge (bridge/whatsapp), which uses the same format."""
+    from app.channels.evolution import parse_evolution
+
+    expected = get_settings().webhook_secret
+    if not expected or not hmac.compare_digest(secret, expected):
+        raise HTTPException(status_code=401)
+    msg = parse_evolution(await request.json())
+    if msg is not None:
+        background.add_task(enqueue_message, msg)
+    return {"ok": True}
+
+
 @app.post("/webhook/stripe")
 async def stripe_webhook(request: Request) -> dict:
     from app import billing

@@ -61,6 +61,17 @@ def _button_from_text(text: str) -> str | None:
     return None
 
 
+async def _offer_from_text(s, user_id: int, text: str) -> str | None:
+    """Channels without buttons: a typed "Confirmar" / "Não quero" answers the newest pending offer."""
+    n = normalize(text or "").strip(" .!")
+    action = next((a for key, a in (("confirm", "confirm"), ("reject", "reject"))
+                   if n in {normalize(v) for v in MESSAGES[key].values()}), None)
+    if not action:
+        return None
+    offer_id = await service.latest_pending_offer_id(s, user_id)
+    return f"offer:{offer_id}:{action}" if offer_id else None
+
+
 async def handle(msg: IncomingMessage) -> None:
     if not await _first_time(msg.message_id):
         return
@@ -74,7 +85,7 @@ async def _handle(msg: IncomingMessage) -> None:
         async with session_scope() as s:
             user, is_new = await service.get_or_create_user(s, msg.phone, msg.push_name, guess_lang(msg.text))
             lang = user.lang
-            button = msg.button_id or _button_from_text(msg.text)
+            button = msg.button_id or _button_from_text(msg.text) or await _offer_from_text(s, user.id, msg.text)
 
             # 1) Consent gate: nothing is processed before an explicit yes.
             if button == "consent:yes":
