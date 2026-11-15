@@ -10,14 +10,15 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from anthropic import AsyncAnthropic
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import llm
+from app import audit, llm
 from app.agent.prompts import SYSTEM_PROMPT
 from app.citas import service
 from app.citas.catalog import PROVINCES, TRAMITES, find_province
 from app.config import get_settings
-from app.models import User
+from app.models import AuditEvent, User
 
 log = logging.getLogger(__name__)
 MAX_HISTORY = 16
@@ -74,6 +75,11 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["audio", "text", "mirror"]}}, "required": ["mode"]},
     },
     {
+        "name": "register_interest",
+        "description": "Note, once, that the user is interested in a service Vale guides but does not book yet.",
+        "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "enum": ["digital_certificate"]}}, "required": ["topic"]},
+    },
+    {
         "name": "request_data_deletion",
         "description": "Ask the user to confirm deletion of all their data (sends a confirmation button).",
         "input_schema": {"type": "object", "properties": {}},
@@ -128,6 +134,15 @@ class Agent:
                     return {"error": "invalid_mode"}
                 user.reply_mode = mode
                 return {"reply_mode": mode}
+            if name == "register_interest":
+                topic = args.get("topic")
+                if topic not in ("digital_certificate",):
+                    return {"error": "unknown_topic"}
+                action = f"interest:{topic}"
+                seen = await session.scalar(select(AuditEvent.id).where(AuditEvent.user_id == user.id, AuditEvent.action == action).limit(1))
+                if not seen:
+                    audit.record(session, action, user.id)
+                return {"noted": True}
             if name == "request_data_deletion":
                 await on_delete()
                 return {"confirmation_sent": True}

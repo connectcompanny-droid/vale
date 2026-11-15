@@ -7,6 +7,15 @@ $py = Join-Path $root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) { throw "venv not found: create it with  py -3.12 -m venv .venv" }
 if (-not (Test-Path (Join-Path $root ".env"))) { throw ".env not found: copy .env.local.example to .env and fill it" }
 
+# Operator panel: create ADMIN_TOKEN on first run and leave a shortcut that opens the panel.
+$envFile = Join-Path $root ".env"
+$adminToken = ([regex]::Match((Get-Content $envFile -Raw), "(?m)^\s*ADMIN_TOKEN\s*=\s*(\S+)")).Groups[1].Value
+if (-not $adminToken) {
+    $adminToken = (& $py -c "import secrets; print(secrets.token_hex(24))").Trim()
+    [IO.File]::AppendAllText($envFile, "`r`nADMIN_TOKEN=$adminToken`r`n")
+}
+[IO.File]::WriteAllText((Join-Path $root "Vale painel.url"), "[InternetShortcut]`r`nURL=http://127.0.0.1:8000/admin?token=$adminToken`r`n")
+
 Push-Location $root
 & $py scripts\migrate.py
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Database migration failed (see the message above)" }
@@ -27,6 +36,7 @@ Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Comm
 Start-Sleep -Seconds 5
 Start-Process powershell -WorkingDirectory $root -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale monitor'; & '$py' run_monitor.py"
 Write-Host "Vale API on http://127.0.0.1:8000  (check: curl http://127.0.0.1:8000/health)"
+Write-Host "Operator panel: double-click 'Vale painel' in the project folder."
 if ($envText -notmatch "(?m)^\s*WHATSAPP_PROVIDER\s*=\s*evolution") {
     Write-Host "Now expose it with ngrok in another window:  ngrok http --url=SEU-DOMINIO.ngrok-free.app 8000"
 }

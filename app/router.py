@@ -18,7 +18,7 @@ from app.models import ProcessedMessage
 from app.queue import user_lock
 from app.documents.extractor import extract_document
 from app.documents.transcriber import TranscriptionError, transcribe
-from app.i18n import MESSAGES, format_fields, guess_lang, t
+from app.i18n import MESSAGES, detect_lang, format_fields, guess_lang, t
 from app.voice.tts import SynthesisError, get_synthesizer
 
 log = logging.getLogger(__name__)
@@ -81,9 +81,12 @@ async def handle(msg: IncomingMessage) -> None:
 
 async def _handle(msg: IncomingMessage) -> None:
     ch = get_channel()
+    lang = guess_lang(msg.text)
     try:
         async with session_scope() as s:
-            user, is_new = await service.get_or_create_user(s, msg.phone, msg.push_name, guess_lang(msg.text))
+            user, is_new = await service.get_or_create_user(s, msg.phone, msg.push_name, lang)
+            if user.consent_at is None and (seen := detect_lang(msg.text)) and seen != user.lang:
+                user.lang = seen  # a first "?" or a photo says nothing; the next message usually does
             lang = user.lang
             button = msg.button_id or _button_from_text(msg.text) or await _offer_from_text(s, user.id, msg.text)
 
@@ -170,7 +173,7 @@ async def _handle(msg: IncomingMessage) -> None:
     except Exception:
         log.exception("failed to handle message %s", msg.message_id)
         try:
-            await ch.send_text(msg.phone, t("error", "pt"))
+            await ch.send_text(msg.phone, t("error", lang))
         except Exception:
             log.exception("failed to send error message")
 

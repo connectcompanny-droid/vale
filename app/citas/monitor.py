@@ -14,19 +14,36 @@ Scaling model
 
 import asyncio
 import logging
+from datetime import timedelta
 
 from sqlalchemy.orm import selectinload
 
+from app import audit
 from app.channels import Button, get_channel
 from app.citas import service, site_guard
 from app.citas.providers.base import CitaProvider, Slot
 from app.config import get_settings
 from app.db import session_scope
 from app.i18n import t
-from app.models import CitaRequest, RequestState
+from app.models import CitaRequest, OfferState, RequestState, SlotOffer
 
 log = logging.getLogger(__name__)
 TICK_SECONDS = 15
+BOOKING_GRACE = timedelta(minutes=2)
+
+
+async def _notify(phone: str, text: str, buttons: list[Button] | None = None) -> bool:
+    """Message a client without letting a WhatsApp failure undo work that is already done."""
+    try:
+        ch = get_channel()
+        if buttons:
+            await ch.send_buttons(phone, text, buttons)
+        else:
+            await ch.send_text(phone, text)
+        return True
+    except Exception:
+        log.exception("could not message a client")
+        return False
 
 
 class Monitor:
@@ -84,7 +101,9 @@ class Monitor:
                 if not await service.claim_group(s, rep_id):
                     continue  # another process took it
             tasks.append(self.check_one(rep_id, others))
-        await asyncio.gather(*tasks)
+        for outcome in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(outcome, Exception):
+                log.error("check failed: %r", outcome)
 
     async def housekeeping(self) -> None:
         """Messages that don't touch the government site: payment links and reminders."""
@@ -98,11 +117,11 @@ class Monitor:
 
     async def expire_offers(self) -> None:
         async with session_scope() as s:
-            for offer in await service.expire_offers(s):
-                if (hk := offer.raw.get("hold_key")) and self.provider.owns(hk):
-                    await self.provider.release(hk)
-                user = offer.request.user
-                await get_channel().send_text(user.phone, t("offer_expired", user.lang))
+            expired = [(o.raw.get("hold_key"), o.request.user.phone, o.request.user.lang) for o in await service.expire_offers(s)]
+        for hold_key, phone, lang in expired:  # committed first: a failed message never blocks the tick
+            if hold_key and self.provider.owns(hold_key):
+                await self.provider.release(hold_key)
+            await _notify(phone, t("offer_expired", lang))
 
     async def check_one(self, request_id: int, group: list[int] | None = None) -> None:
         """Check the site once for `request_id` (the longest-waiting client). When slots open, that
@@ -116,6 +135,7 @@ class Monitor:
                 province, tramite, phone, lang = req.province, req.tramite_code, req.user.phone, req.user.lang
 
             result = await self.provider.check(request_id, province, tramite, profile)
+            needs_human = False
 
             async with session_scope() as s:
                 req = await s.get(CitaRequest, request_id)
@@ -132,37 +152,58 @@ class Monitor:
                 if result.status == "slots" and result.slots:
                     slot = result.slots[0]
                     offer = await service.create_offer(s, req, slot.office, slot.starts_at, {**slot.raw, "hold_key": result.hold_key})
-                    await get_channel().send_buttons(phone, t("offer", lang, office=offer.office, starts_at=offer.starts_at, ttl=get_settings().offer_ttl_minutes), [
+                    sent = await _notify(phone, t("offer", lang, office=offer.office, starts_at=offer.starts_at, ttl=get_settings().offer_ttl_minutes), [
                         Button(f"offer:{offer.id}:confirm", t("confirm", lang)),
                         Button(f"offer:{offer.id}:reject", t("reject", lang)),
                     ])
+                    if not sent:
+                        # The client never saw the offer: free the slot and undo it, so the next check offers again.
+                        if result.hold_key:
+                            await self.provider.release(result.hold_key)
+                        raise RuntimeError(f"offer for request {request_id} could not be delivered")
                 elif result.status == "needs_human":
                     await service.mark_needs_human(s, req, result.reason)
-                    await get_channel().send_text(phone, t("needs_human", lang, url=self.provider.public_url))
+                    needs_human = True
+            if needs_human:
+                await _notify(phone, t("needs_human", lang, url=self.provider.public_url))
 
     async def book_approved(self) -> None:
         async with session_scope() as s:
-            jobs = [(r.id, o.office, o.starts_at, dict(o.raw), r.user.phone, r.user.lang)
+            jobs = [(r.id, o.id, o.office, o.starts_at, dict(o.raw), service.aware(o.expires_at), r.user.phone, r.user.lang)
                     for r, o in await service.requests_to_book(s)]
-        for request_id, office, starts_at, raw, phone, lang in jobs:
+        for request_id, offer_id, office, starts_at, raw, expires_at, phone, lang in jobs:
             hold_key = raw.get("hold_key")
-            if hold_key and not self.provider.owns(hold_key):
-                continue  # the browser session lives in another process
+            if not hold_key or not self.provider.owns(hold_key):
+                # The browser session lives in another process, or died with a restart. Once the
+                # offer's time is over nobody can book it: put the client back in the queue.
+                if expires_at + BOOKING_GRACE < service.utcnow():
+                    async with session_scope() as s:
+                        req = await s.get(CitaRequest, request_id)
+                        offer = await s.get(SlotOffer, offer_id)
+                        if req and req.state == RequestState.booking:
+                            req.state = RequestState.monitoring
+                            offer.state = OfferState.expired
+                            audit.record(s, "booking_abandoned", req.user_id, req.id, offer_id=offer_id)
+                    await _notify(phone, t("offer_expired", lang))
+                continue
             if not await site_guard.acquire_visit(self.site, priority=True):
                 return  # site paused: approval stays valid until the offer expires
             async with session_scope() as s:
                 profile = await service.get_profile(s, (await s.get(CitaRequest, request_id)).user_id)
             result = await self.provider.book(request_id, Slot(office, starts_at, raw), profile, phone, hold_key)
+            message = None
             async with session_scope() as s:
                 req = await s.get(CitaRequest, request_id)
                 if result.status == "booked":
                     await service.mark_booked(s, req, result.reference)
-                    await get_channel().send_text(phone, t("booked", lang, office=office, starts_at=starts_at, reference=result.reference or ""))
+                    message = t("booked", lang, office=office, starts_at=starts_at, reference=result.reference or "")
                 elif result.reason in ("tls_untrusted", "blocked_by_site"):
                     await self._pause(result.reason, request_id)
                 elif result.status == "slot_gone":
                     req.state = RequestState.monitoring
-                    await get_channel().send_text(phone, t("offer_expired", lang))
+                    message = t("offer_expired", lang)
                 else:
                     await service.mark_needs_human(s, req, result.reason or result.status)
-                    await get_channel().send_text(phone, t("needs_human", lang, url=self.provider.public_url))
+                    message = t("needs_human", lang, url=self.provider.public_url)
+            if message:  # sent after the result is saved: a booked cita is never lost to a failed message
+                await _notify(phone, message)

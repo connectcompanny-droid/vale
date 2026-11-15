@@ -10,3 +10,4 @@ vale.db-*
 graphify-out/
 scripts/start_vale.log
 .env.backup-*
+*.url

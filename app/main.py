@@ -10,7 +10,7 @@ from app.channels import get_channel
 from app.config import get_settings
 from app.db import create_all, engine, session_scope
 from app.logging_setup import setup_logging
-from app.models import CitaRequest, SiteState, User
+from app.models import AuditEvent, CitaRequest, SiteState, User
 from app.queue import enqueue_message, queue_depth
 
 setup_logging()
@@ -140,6 +140,7 @@ async def admin_summary(token: str = Query("")) -> dict:
         consented = await s.scalar(select(func.count()).select_from(User).where(User.consent_at.is_not(None)))
         activations = await s.scalar(select(func.count()).select_from(CitaRequest).where(CitaRequest.activation_paid_at.is_not(None)))
         successes = await s.scalar(select(func.count()).select_from(CitaRequest).where(CitaRequest.success_paid_at.is_not(None)))
+        cert_interest = await s.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.action == "interest:digital_certificate"))
         sites = [{"site": st.site, "paused_until": st.paused_until.isoformat() if st.paused_until else None,
                   "reason": st.pause_reason, "visits": st.visits} for st in (await s.scalars(select(SiteState))).all()]
         rows = (await s.execute(select(CitaRequest, User.phone).join(User, User.id == CitaRequest.user_id)
@@ -149,7 +150,7 @@ async def admin_summary(token: str = Query("")) -> dict:
                    "activation_paid": bool(r.activation_paid_at), "success_paid": bool(r.success_paid_at),
                    "created_at": r.created_at.isoformat() if r.created_at else None} for r, phone in rows]
     return {"users": users, "consented": consented, "requests_by_state": by_state,
-            "activations_paid": activations, "success_fees_paid": successes, "sites": sites, "latest_requests": latest}
+            "activations_paid": activations, "success_fees_paid": successes, "digital_certificate_interest": cert_interest, "sites": sites, "latest_requests": latest}
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -172,7 +173,8 @@ async def admin_page(token: str = Query("")) -> str:
     return (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
             f"<title>Vale admin</title><style>{css}</style><h1>Vale · painel</h1><div class=k>"
             f"<div>Usuários<br><b>{data['users']}</b></div><div>Com consentimento<br><b>{data['consented']}</b></div>"
-            f"<div>Ativações pagas<br><b>{data['activations_paid']}</b></div><div>Taxas de sucesso pagas<br><b>{data['success_fees_paid']}</b></div></div>"
+            f"<div>Ativações pagas<br><b>{data['activations_paid']}</b></div><div>Taxas de sucesso pagas<br><b>{data['success_fees_paid']}</b></div>"
+            f"<div>Interessados em certificado digital<br><b>{data['digital_certificate_interest']}</b></div></div>"
             f"<h2>Pedidos por estado</h2><table><tr><th>Estado</th><th>Qtd</th></tr>{states}</table>"
             f"<h2>Site do governo</h2><table><tr><th>Site</th><th>Pausado até</th><th>Motivo</th><th>Visitas</th></tr>{sites}</table>"
             f"<h2>Últimos pedidos</h2><table><tr><th>#</th><th>Telefone</th><th>Província</th><th>Trâmite</th><th>Estado</th>"

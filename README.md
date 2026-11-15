@@ -130,3 +130,16 @@ Evolution depois só mudando `EVOLUTION_BASE_URL` e `EVOLUTION_API_KEY`.
 
 Use um número só para o Vale: APIs baseadas no WhatsApp Web não são oficiais e o número pode ser
 bloqueado se enviar mensagens em massa. O Vale só responde a quem escreve primeiro.
+
+## Certificado digital (FNMT)
+
+O Vale também orienta o cliente, passo a passo no WhatsApp, a tirar o certificado digital de pessoa
+física (pedido no site da FNMT, comprovação de identidade, download). Ele oferece isso quando o cliente
+pergunta ou depois de uma cita de NIE/TIE/certificado UE reservada. O Vale **não** pede, baixa nem guarda
+o certificado de ninguém, e ainda não marca a cita de comprovação de identidade (AEAT / Seguridad Social).
+Quantas pessoas se interessaram aparece no painel (`/admin`), para decidir se vale construir essa marcação.
+
+## Painel no PC
+
+`run_local.ps1` cria o `ADMIN_TOKEN` na primeira execução e deixa o atalho **Vale painel** na pasta do
+projeto: dois cliques abrem o painel (só funciona neste computador, com o Vale ligado).

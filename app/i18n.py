@@ -55,9 +55,9 @@ MESSAGES: dict[str, dict[str, str]] = {
         "en": "Booking now… ⏳",
     },
     "booked": {
-        "pt": "Reservado ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nLeve o passaporte original e o justificante. Te lembro na véspera.",
-        "es": "Reservado ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nLleva el pasaporte original y el justificante. Te aviso el día antes.",
-        "en": "Booked ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nBring your original passport and the receipt. I'll remind you the day before.",
+        "pt": "Reservado ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nLeve o passaporte original e o justificante. Te lembro na véspera. Depois da cita, se quiser, eu te guio para tirar o certificado digital e fazer os próximos trâmites pela internet.",
+        "es": "Reservado ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nLleva el pasaporte original y el justificante. Te aviso el día antes. Después de la cita, si quieres, te guío para sacar el certificado digital y hacer los siguientes trámites por internet.",
+        "en": "Booked ✓\n\n📍 {office}\n🗓 {starts_at}\n{reference}\n\nBring your original passport and the receipt. I'll remind you the day before. After the appointment, if you like, I can guide you through getting the digital certificate so you can do the next procedures online.",
     },
     "needs_human": {
         "pt": "O site do governo pediu uma verificação que só você pode fazer. Abra este link e conclua por lá; os seus dados já estão aqui à mão:\n{url}",
@@ -170,10 +170,15 @@ def t(key: str, lang: str, **kwargs) -> str:
     return table.get(lang, table["pt"]).format(**kwargs)
 
 
-def guess_lang(text: str) -> str:
-    s = f" {text.lower()} "
+def detect_lang(text: str) -> str | None:
+    """Language of a message, or None when it gives no clear sign."""
+    s = f" {(text or '').lower()} "
     es = sum(w in s for w in (" hola", " necesito", " quiero", " gracias", " cita ", "¿", " por favor"))
     pt = sum(w in s for w in (" olá", " oi ", " preciso", " quero", " obrigad", " você", " vocês"))
     en = sum(w in s for w in (" hello", " hi ", " need", " want", " thanks", " appointment", " please"))
     best = max((pt, "pt"), (es, "es"), (en, "en"))
-    return best[1] if best[0] > 0 else "pt"
+    return best[1] if best[0] > 0 else None
+
+
+def guess_lang(text: str) -> str:
+    return detect_lang(text) or "pt"

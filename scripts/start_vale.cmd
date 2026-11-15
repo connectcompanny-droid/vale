@@ -6,6 +6,12 @@ cd /d "%~dp0.."
 set LOG=scripts\start_vale.log
 echo === %date% %time% === > "%LOG%"
 
+where git >nul 2>&1
+if not errorlevel 1 (
+  echo Updating Vale... >> "%LOG%"
+  git pull --ff-only >> "%LOG%" 2>&1
+)
+
 if not exist ".venv\Scripts\python.exe" (
   echo Creating the Python environment... >> "%LOG%"
   py -3.12 -m venv .venv >> "%LOG%" 2>&1 || py -m venv .venv >> "%LOG%" 2>&1
