@@ -176,3 +176,22 @@ async def handle_msg(m):
     from app.router import handle
 
     await handle(m)
+
+
+@pytest.mark.asyncio
+async def test_details_can_be_confirmed_in_words_and_language_follows_the_person(channel):
+    from app.agent.orchestrator import Agent
+
+    async with session_scope() as s:
+        user, _ = await service.get_or_create_user(s, "34600000004", None, "es")
+        await service.give_consent(s, user)
+        req = await service.create_request(s, user, "granada", "nie")
+        agent = Agent(client=object())
+        assert await agent._run_tool(s, user, "confirm_personal_data", {}, None, None) == {"error": "nothing_to_confirm"}
+        await service.save_pending_data(s, user, PROFILE, source="photo", kind="passport")
+        status = await agent._run_tool(s, user, "get_my_status", {}, None, None)
+        assert status["details_waiting_for_confirmation"] is True
+        out = await agent._run_tool(s, user, "confirm_personal_data", {}, None, None)
+        assert out == {"confirmed": True, "now_monitoring": [req.id]} and req.state == RequestState.monitoring
+        assert await agent._run_tool(s, user, "set_language", {"lang": "pt"}, None, None) == {"lang": "pt"}
+        assert user.lang == "pt"

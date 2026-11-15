@@ -75,6 +75,21 @@ TOOLS = [
         },
     },
     {
+        "name": "confirm_personal_data",
+        "description": (
+            "Confirm the details shown in the latest read-back message (the one with the 'It's right' / 'Fix it' options). "
+            "Call it ONLY when the person clearly says in their own words that those details are correct "
+            "(e.g. 'está tudo certo', 'sí, correcto', 'yes that's right'). Never call it on your own initiative, "
+            "never when they want to change something (use submit_personal_data for corrections)."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "set_language",
+        "description": "Switch the language of Vale's fixed messages (read-backs, slot offers, reminders) when the person writes in another language than the current one.",
+        "input_schema": {"type": "object", "properties": {"lang": {"type": "string", "enum": ["pt", "es", "en"]}}, "required": ["lang"]},
+    },
+    {
         "name": "set_reply_mode",
         "description": "Change how Vale answers when the user asks: 'audio' (always voice notes), 'text' (never voice), 'mirror' (voice only when they send voice).",
         "input_schema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["audio", "text", "mirror"]}}, "required": ["mode"]},
@@ -111,6 +126,7 @@ class Agent:
                 profile = await service.get_profile(session, user.id)
                 return {
                     "has_email": bool(profile.get("email")),
+                    "details_waiting_for_confirmation": bool(await service.latest_pending(session, user.id)),
                     "requests": [
                         {"request_id": r.id, "province": r.province, "tramite": r.tramite_code, "state": r.state.value,
                          "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code, user.phone),
@@ -139,6 +155,19 @@ class Agent:
                     return {"error": "not_available"}
                 await on_data({k: v for k, v in args.items() if v})
                 return {"readback_sent": True}
+            if name == "confirm_personal_data":
+                pending = await service.latest_pending(session, user.id)
+                if not pending:
+                    return {"error": "nothing_to_confirm"}
+                promoted = await service.confirm_pending(session, user, pending.id)
+                audit.record(session, "data_confirmed_in_words", user.id)
+                return {"confirmed": True, "now_monitoring": [r.id for r in promoted]}
+            if name == "set_language":
+                lang = args.get("lang")
+                if lang not in ("pt", "es", "en"):
+                    return {"error": "invalid_lang"}
+                user.lang = lang
+                return {"lang": lang}
             if name == "set_reply_mode":
                 mode = args.get("mode")
                 if mode not in ("audio", "text", "mirror"):
