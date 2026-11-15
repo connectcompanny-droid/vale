@@ -7,7 +7,10 @@ code before anything reaches the LLM.
 import logging
 
 from app import audit
+from app.agent import relevance
 from app.agent.orchestrator import Agent
+from app.channels import web as web_channel
+from app.config import get_settings
 from app.channels import Button, IncomingMessage, get_channel
 from app.citas import service
 from app.citas.catalog import TRAMITES, normalize
@@ -22,6 +25,7 @@ from app.i18n import MESSAGES, detect_lang, format_fields, guess_lang, t
 from app.voice.tts import SynthesisError, get_synthesizer
 
 log = logging.getLogger(__name__)
+SKIP = "[SKIP]"
 
 DELETE_WORDS = ("APAGA TUDO", "APAGAR TUDO", "APAGUE TUDO", "BORRALO TODO", "BORRAR TODO", "BORRA TODO", "DELETE EVERYTHING", "DELETE MY DATA")
 _agent: Agent | None = None
@@ -79,8 +83,32 @@ async def handle(msg: IncomingMessage) -> None:
         await _handle(msg)
 
 
+async def _meant_for_vale(msg: IncomingMessage) -> bool:
+    """Someone Vale has never talked to: answer only if they want something Vale offers.
+    Nothing about an ignored message is stored (only its id, to drop provider retries)."""
+    if web_channel.is_web(msg.phone) or not get_settings().reply_only_relevant:
+        return True
+    async with session_scope() as s:
+        if await service.find_user(s, msg.phone):
+            return True
+    text = msg.text or ""
+    if msg.has_media and msg.media_kind == "audio" and not text:
+        try:
+            audio, mime = await get_channel().download_media(msg)
+            text = await transcribe(audio, mime, None)
+            del audio
+        except Exception:
+            return False
+    if await relevance.is_about_services(text):
+        return True
+    log.info("ignored a message not related to Vale's services")
+    return False
+
+
 async def _handle(msg: IncomingMessage) -> None:
     ch = get_channel()
+    if not await _meant_for_vale(msg):
+        return
     lang = guess_lang(msg.text)
     try:
         async with session_scope() as s:
@@ -219,8 +247,8 @@ def _should_speak(user, client_spoke: bool, text: str) -> bool:
 async def _deliver(s, user, phone: str, text: str, client_spoke: bool) -> None:
     """Send a conversational reply as a voice note when appropriate, otherwise as text.
     Read-backs, offers and legal texts never go through here: they stay as text with buttons."""
-    if not text:
-        return
+    if not text or text.strip() == SKIP:
+        return  # the agent saw nothing for Vale in this message
     ch = get_channel()
     if _should_speak(user, client_spoke, text):
         try:
@@ -279,11 +307,11 @@ async def _handle_document(s, user, msg: IncomingMessage) -> bool:
     except Exception:
         log.exception("document photo from a client could not be read")
         audit.record(s, "document_failed", user.id)
-        await ch.send_text(msg.phone, DOC_FAILED.get(lang, DOC_FAILED["pt"]))
+        await ch.send_text(msg.phone, DOC_FAILED.get(lang, DOC_FAILED["es"]))
         return False
     if doc.document_kind == "unreadable" or doc.confidence == "low":
         audit.record(s, "document_unreadable", user.id, issues=doc.issues)
-        await ch.send_text(msg.phone, UNREADABLE.get(lang, UNREADABLE["pt"]))
+        await ch.send_text(msg.phone, UNREADABLE.get(lang, UNREADABLE["es"]))
         return False
     if "expired" in doc.issues:
         await ch.send_text(msg.phone, {"pt": "⚠️ Parece que este documento está vencido.", "es": "⚠️ Parece que este documento está caducado.", "en": "⚠️ This document looks expired."}[lang])

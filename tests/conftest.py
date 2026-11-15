@@ -9,6 +9,9 @@ os.environ.setdefault("WEBHOOK_SECRET", "test-secret")
 os.environ.setdefault("SITE_MIN_GAP_SECONDS", "0")
 os.environ.setdefault("QUEUE_MODE", "inline")
 os.environ.setdefault("ACTIVE_PROVINCES", "granada,madrid,barcelona")
+# Existing tests were written for a Portuguese default and an open door; both are tested explicitly elsewhere.
+os.environ.setdefault("DEFAULT_LANG", "pt")
+os.environ.setdefault("REPLY_ONLY_RELEVANT", "false")
 
 from app import db, router  # noqa: E402
 from app.channels import Button, Channel, IncomingMessage, set_channel  # noqa: E402

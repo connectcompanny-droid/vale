@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     evolution_api_key: str = ""
     evolution_instance: str = "vale"
 
+    # WhatsApp: answer new people only when their message is about Vale's services (the number may
+    # also get personal or unrelated messages). The website chat always answers.
+    reply_only_relevant: bool = True
+    classifier_model: str = "claude-haiku-5-5"
+    # Language of the fixed messages until the client shows another one.
+    default_lang: str = "es"
+
     # Provinces open to clients (comma separated keys from the catalog). Start with the validated ones.
     active_provinces: str = "granada"
 

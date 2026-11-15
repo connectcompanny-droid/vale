@@ -52,7 +52,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     phone: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(120))
-    lang: Mapped[str] = mapped_column(String(5), default="pt")
+    lang: Mapped[str] = mapped_column(String(5), default="es")
     # How Vale answers: "mirror" (voice when the client sent voice), "audio" (always), "text" (never voice).
     reply_mode: Mapped[str] = mapped_column(String(8), default="mirror")
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

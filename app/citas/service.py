@@ -36,7 +36,11 @@ def aware(dt: datetime | None) -> datetime | None:
 
 # ---------- users ----------
 
-async def get_or_create_user(session: AsyncSession, phone: str, name: str | None = None, lang: str = "pt") -> tuple[User, bool]:
+async def find_user(session: AsyncSession, phone: str) -> User | None:
+    return await session.scalar(select(User).where(User.phone == phone))
+
+
+async def get_or_create_user(session: AsyncSession, phone: str, name: str | None = None, lang: str = "es") -> tuple[User, bool]:
     user = await session.scalar(select(User).where(User.phone == phone))
     if user:
         return user, False

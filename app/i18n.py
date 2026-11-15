@@ -161,24 +161,33 @@ FIELD_NAMES = {
 
 
 def format_fields(fields: dict, lang: str) -> str:
-    rows = [f"{FIELD_NAMES[k].get(lang, FIELD_NAMES[k]['pt'])}: {fields[k]}" for k in FIELD_NAMES if fields.get(k)]
+    rows = [f"{FIELD_NAMES[k].get(lang, FIELD_NAMES[k]['es'])}: {fields[k]}" for k in FIELD_NAMES if fields.get(k)]
     return "\n".join(rows)
 
 
 def t(key: str, lang: str, **kwargs) -> str:
     table = MESSAGES[key]
-    return table.get(lang, table["pt"]).format(**kwargs)
+    return table.get(lang, table["es"]).format(**kwargs)
 
 
 def detect_lang(text: str) -> str | None:
     """Language of a message, or None when it gives no clear sign."""
     s = f" {(text or '').lower()} "
-    es = sum(w in s for w in (" hola", " necesito", " quiero", " gracias", " cita ", "¿", " por favor"))
-    pt = sum(w in s for w in (" olá", " oi ", " preciso", " quero", " obrigad", " você", " vocês"))
+    es = sum(w in s for w in (" hola", " necesito", " quiero", " gracias", "¿", " por favor", " tengo", " puedo",
+                                " usted", " estoy", " también", " ahora", " mañana", " sí ", " pero ", " el ", " los "))
+    pt = sum(w in s for w in (" olá", " oi ", " preciso", " quero", " obrigad", " você", " vocês", " tenho", " posso",
+                                " estou", " também", " agora", " amanhã", " não", " sim ", " mas ", " pra ", " meu ", " minha "))
     en = sum(w in s for w in (" hello", " hi ", " need", " want", " thanks", " appointment", " please"))
     best = max((pt, "pt"), (es, "es"), (en, "en"))
     return best[1] if best[0] > 0 else None
 
 
+def default_lang() -> str:
+    from app.config import get_settings
+
+    lang = get_settings().default_lang
+    return lang if lang in ("pt", "es", "en") else "es"
+
+
 def guess_lang(text: str) -> str:
-    return detect_lang(text) or "pt"
+    return detect_lang(text) or default_lang()

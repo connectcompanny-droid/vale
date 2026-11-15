@@ -196,7 +196,7 @@ class Agent:
             lang=user.lang,
             channel=WEB_NOTE.format(ttl=get_settings().offer_ttl_minutes) if service.is_web(user.phone) else WHATSAPP_NOTE,
             provinces=", ".join(PROVINCES.values()),
-            tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['pt'])}" for t in TRAMITES.values()),
+            tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['es'])}" for t in TRAMITES.values()),
         )
         history = [h for h in (user.history or []) if h.get("role") in ("user", "assistant")][-MAX_HISTORY:]
         messages: list[dict] = [*history, {"role": "user", "content": text}]
@@ -216,6 +216,8 @@ class Agent:
                     out = await self._run_tool(session, user, block.name, block.input or {}, on_delete, on_data)
                     results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(out, ensure_ascii=False)})
             messages.append({"role": "user", "content": results})
+        if final == "[SKIP]":
+            return final  # not for Vale: nothing is sent and nothing goes into the history
         # Store only plain-text turns; tool payloads stay out of the long-lived history.
         user.history = [*history, {"role": "user", "content": text}, {"role": "assistant", "content": final or "…"}][-MAX_HISTORY:]
         return final

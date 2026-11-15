@@ -43,7 +43,7 @@ class ElevenLabsSynthesizer(Synthesizer):
         self.voices = {"pt": s.tts_voice_pt, "es": s.tts_voice_es, "en": s.tts_voice_en}
 
     async def synthesize(self, text: str, lang: str) -> tuple[bytes, str]:
-        voice = self.voices.get(lang) or self.voices.get("pt")
+        voice = self.voices.get(lang) or self.voices.get("es")
         if not (self.key and voice):
             raise SynthesisError("elevenlabs_not_configured")
         async with httpx.AsyncClient(timeout=60) as c:
