@@ -62,10 +62,21 @@ SEL = {
 }
 TEXT = {
     # Web application firewall page shown when the site refuses automated traffic.
-    "blocked": "the requested url was rejected",
+    "blocked": "the requested url was rejected",  # kept for older callers; see BLOCK_MARKERS
     "no_slots": "no hay citas disponibles",
     "reference": "justificante",
 }
+
+
+# Pages the site's own defences show when they refuse a visitor: the application firewall
+# ("Request Rejected") and the intrusion-prevention system in front of it. Either one means
+# "stop": Vale pauses for every client and never tries to get around it.
+BLOCK_MARKERS = ("the requested url was rejected", "intrusion prevention", "request rejected")
+
+
+def is_block_page(html: str) -> bool:
+    low = (html or "").lower()
+    return any(m in low for m in BLOCK_MARKERS)
 
 
 TLS_ERRORS = ("ERR_CERT_", "ERR_SSL_", "SSL_ERROR", "SEC_ERROR_")
@@ -189,7 +200,7 @@ class ICPProvider(CitaProvider):
 
     async def _blocked(self, page: Page) -> bool:
         try:
-            return TEXT["blocked"] in (await page.content()).lower()
+            return is_block_page(await page.content())
         except Exception:
             return False
 

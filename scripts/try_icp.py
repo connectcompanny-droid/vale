@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from playwright.async_api import Page, async_playwright  # noqa: E402
 
 from app.citas.catalog import PROVINCES, TRAMITES, label_matches  # noqa: E402
-from app.citas.providers.icp import BASE_URL, SEL, TEXT, _nie_like  # noqa: E402
+from app.citas.providers.icp import BASE_URL, SEL, TEXT, _nie_like, is_block_page  # noqa: E402
 
 DEBUG = Path("debug")
 step_no = 0
@@ -92,7 +92,7 @@ BLOCK_MSG = """
 
 
 async def pick(page, selector: str, predicate, what: str) -> bool:
-    if "the requested url was rejected" in (await page.content()).lower():
+    if is_block_page(await page.content()):
         print(BLOCK_MSG)
         return False
     selects = await page.locator(selector).all()
@@ -117,7 +117,7 @@ async def pick(page, selector: str, predicate, what: str) -> bool:
 
 
 async def click(page: Page, key: str) -> bool:
-    if "the requested url was rejected" in (await page.content()).lower():
+    if is_block_page(await page.content()):
         print(BLOCK_MSG)
         return False
     sel = SEL[key]

@@ -195,3 +195,26 @@ async def test_details_can_be_confirmed_in_words_and_language_follows_the_person
         assert out == {"confirmed": True, "now_monitoring": [req.id]} and req.state == RequestState.monitoring
         assert await agent._run_tool(s, user, "set_language", {"lang": "pt"}, None, None) == {"lang": "pt"}
         assert user.lang == "pt"
+
+
+def test_firewall_and_intrusion_prevention_pages_are_recognised_as_blocks():
+    from app.citas.providers.icp import is_block_page
+
+    assert is_block_page("<title>Request Rejected</title>The requested URL was rejected. Please consult...")
+    assert is_block_page("<h1>FortiGate Intrusion Prevention</h1> Intrusion Prevention Triggered")
+    assert not is_block_page("<select id='form'><option>Granada</option></select>") and not is_block_page("")
+
+
+@pytest.mark.asyncio
+async def test_a_block_pauses_the_site_for_everyone_and_tells_clients_once(channel, provider):
+    from app.citas import site_guard
+
+    await _monitoring_request()
+    provider.next_check = CheckResult("error", reason="blocked_by_site")
+    m = Monitor(provider)
+    await m.tick()
+    assert await site_guard.paused_until() is not None
+    assert "pausa" in channel.last[1]
+    sent = len(channel.sent)
+    await m.tick()  # paused: no visit, no second notice
+    assert len(channel.sent) == sent
