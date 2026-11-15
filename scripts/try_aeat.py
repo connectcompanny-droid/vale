@@ -30,7 +30,9 @@ OUT = Path("debug")
 # Runs in the page: structure only. Text inputs report their type and labels, never their value.
 DUMP_JS = r"""
 () => {
-  const clean = (t) => (t || "").replace(/\s+/g, " ").trim().slice(0, 120);
+  // Identifiers that pages echo back (NIE/DNI, phone numbers, emails) are masked before saving.
+  const mask = (t) => t.replace(/\b[XYZ]?\d{7,8}[A-Z]\b/gi, "[id]").replace(/\S+@\S+\.\S+/g, "[email]").replace(/\b\d{9,}\b/g, "[number]");
+  const clean = (t) => mask((t || "").replace(/\s+/g, " ").trim().slice(0, 120));
   const labelOf = (el) => {
     if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) return clean(l.innerText); }
     const p = el.closest("label"); if (p) return clean(p.innerText);
