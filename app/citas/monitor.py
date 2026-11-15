@@ -111,7 +111,7 @@ class Monitor:
         """Messages that don't touch the government site: payment links and reminders."""
         from app import billing, notifications
 
-        jobs = [billing.send_pending_links, notifications.send_reminders]
+        jobs = [billing.send_pending_links, notifications.send_reminders, notifications.send_external_reminders]
         if time.monotonic() - self._last_cleanup > 6 * 3600:  # also covers setups without the worker's cron
             from app import maintenance
 

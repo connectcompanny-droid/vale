@@ -18,7 +18,7 @@ from app.citas.catalog import PROVINCES, TRAMITES
 from app.config import get_settings
 from app.crypto import decrypt_json, encrypt_json
 from app.documents.extractor import ExtractedDocument
-from app.models import ACTIVE_STATES, AuditEvent, CitaRequest, Document, OfferState, RequestState, SlotOffer, User, WebMessage
+from app.models import ACTIVE_STATES, AuditEvent, CitaRequest, Document, OfferState, RequestState, SlotOffer, User, WebMessage, ExternalAppointment
 
 
 class RuleError(Exception):
@@ -63,6 +63,7 @@ async def delete_user_data(session: AsyncSession, user: User) -> None:
         await session.execute(delete(SlotOffer).where(SlotOffer.request_id.in_(req_ids)))
     await session.execute(delete(CitaRequest).where(CitaRequest.user_id == uid))
     await session.execute(delete(Document).where(Document.user_id == uid))
+    await session.execute(delete(ExternalAppointment).where(ExternalAppointment.user_id == uid))
     await session.execute(delete(WebMessage).where(WebMessage.user_key == user.phone))
     await session.execute(update(AuditEvent).where(AuditEvent.user_id == uid).values(user_id=None, detail={}))
     await session.delete(user)

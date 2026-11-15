@@ -18,7 +18,7 @@ from app.agent.prompts import SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
 from app.citas import service
 from app.citas.catalog import PROVINCES, TRAMITES, find_province
 from app.config import get_settings
-from app.models import AuditEvent, User
+from app.models import AuditEvent, ExternalAppointment, User
 
 log = logging.getLogger(__name__)
 MAX_HISTORY = 16
@@ -83,6 +83,15 @@ TOOLS = [
             "never when they want to change something (use submit_personal_data for corrections)."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "save_appointment_reminder",
+        "description": "Remember an appointment the person booked themselves (for example the identity check for the digital certificate) so Vale reminds them the day before. Use the date exactly as they said it, written as DD/MM/YYYY HH:MM.",
+        "input_schema": {"type": "object", "properties": {
+            "what": {"type": "string", "description": "Short description, e.g. 'Acreditación certificado digital'"},
+            "starts_at": {"type": "string", "description": "DD/MM/YYYY HH:MM"},
+            "place": {"type": "string", "description": "Office name or address, if given"},
+        }, "required": ["what", "starts_at"]},
     },
     {
         "name": "set_language",
@@ -162,6 +171,19 @@ class Agent:
                 promoted = await service.confirm_pending(session, user, pending.id)
                 audit.record(session, "data_confirmed_in_words", user.id)
                 return {"confirmed": True, "now_monitoring": [r.id for r in promoted]}
+            if name == "save_appointment_reminder":
+                from app.notifications import appointment_date
+
+                when = str(args.get("starts_at", ""))[:60]
+                day = appointment_date(when)
+                if day is None:
+                    return {"error": "date_not_understood", "hint": "Ask for the date as DD/MM/YYYY"}
+                if day < service.utcnow().date():
+                    return {"error": "date_in_the_past"}
+                session.add(ExternalAppointment(user_id=user.id, what=str(args.get("what", ""))[:120], starts_at=when,
+                                                place=str(args.get("place", "") or "")[:200]))
+                audit.record(session, "external_appointment_saved", user.id)
+                return {"saved": True, "reminder": "the day before"}
             if name == "set_language":
                 lang = args.get("lang")
                 if lang not in ("pt", "es", "en"):

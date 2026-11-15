@@ -138,6 +138,11 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Pago recibido ✓ ¡Gracias! Mucha suerte en tu cita.",
         "en": "Payment received ✓ Thank you! Good luck at your appointment.",
     },
+    "external_reminder": {
+        "pt": "⏰ Lembrete: amanhã você tem {what}.\n\n🗓 {starts_at}\n📍 {place}\n\nLeve o código do pedido, o passaporte e o documento com o seu NIE. Se precisar, me pergunte.",
+        "es": "⏰ Recordatorio: mañana tienes {what}.\n\n🗓 {starts_at}\n📍 {place}\n\nLleva el código de solicitud, el pasaporte y el documento con tu NIE. Si necesitas algo, pregúntame.",
+        "en": "⏰ Reminder: tomorrow you have {what}.\n\n🗓 {starts_at}\n📍 {place}\n\nBring the request code, your passport and the document with your NIE. Ask me if you need anything.",
+    },
     "reminder": {
         "pt": "⏰ Lembrete: sua cita é amanhã.\n\n📍 {office}\n🗓 {starts_at}\n\nLeve o passaporte original, o justificante e chegue uns 10 minutos antes. Boa sorte!",
         "es": "⏰ Recordatorio: tu cita es mañana.\n\n📍 {office}\n🗓 {starts_at}\n\nLleva el pasaporte original y el justificante, y llega unos 10 minutos antes. ¡Suerte!",

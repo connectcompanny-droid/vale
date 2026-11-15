@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.db import session_scope
 from app.i18n import t
-from app.models import CitaRequest, OfferState, RequestState
+from app.models import CitaRequest, ExternalAppointment, OfferState, RequestState
 
 log = logging.getLogger(__name__)
 MADRID = ZoneInfo("Europe/Madrid")
@@ -63,6 +63,33 @@ async def send_reminders(now: datetime | None = None) -> int:
             sent += 1
         except Exception:
             log.exception("reminder for request %s failed", req_id)
+    return sent
+
+
+async def send_external_reminders(now: datetime | None = None) -> int:
+    """Day-before reminders for appointments clients booked themselves (e.g. the digital certificate)."""
+    from app.channels import get_channel
+
+    local = (now or datetime.now(timezone.utc)).astimezone(MADRID)
+    if local.hour < get_settings().reminder_hour:
+        return 0
+    tomorrow = local.date() + timedelta(days=1)
+    async with session_scope() as s:
+        rows = (await s.scalars(select(ExternalAppointment).options(selectinload(ExternalAppointment.user))
+                                .where(ExternalAppointment.reminded_at.is_(None)))).all()
+        due = [(a.id, a.user.phone, a.user.lang, a.what, a.starts_at, a.place) for a in rows if appointment_date(a.starts_at) == tomorrow]
+    sent = 0
+    for appt_id, phone, lang, what, starts_at, place in due:
+        async with session_scope() as s:
+            res = await s.execute(update(ExternalAppointment).where(ExternalAppointment.id == appt_id, ExternalAppointment.reminded_at.is_(None))
+                                  .values(reminded_at=datetime.now(timezone.utc)))
+            if res.rowcount != 1:
+                continue
+        try:
+            await get_channel().send_text(phone, t("external_reminder", lang, what=what, starts_at=starts_at, place=place or "-"))
+            sent += 1
+        except Exception:
+            log.exception("external reminder %s failed", appt_id)
     return sent
 
 

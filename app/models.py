@@ -173,3 +173,20 @@ class WebMessage(Base):
     direction: Mapped[str] = mapped_column(String(3))  # in | out
     body_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ExternalAppointment(Base):
+    """An appointment the client booked themselves (e.g. identity check for the digital certificate).
+    Vale only reminds them the day before."""
+
+    __tablename__ = "external_appointments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    what: Mapped[str] = mapped_column(String(120))
+    starts_at: Mapped[str] = mapped_column(String(60))  # as given, e.g. "20/11/2026 10:30"
+    place: Mapped[str] = mapped_column(String(200), default="")
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped["User"] = relationship()

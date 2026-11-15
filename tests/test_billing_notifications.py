@@ -263,3 +263,29 @@ async def test_clients_from_the_free_beta_are_never_billed(channel, monkeypatch)
         assert await billing.send_pending_links() == 0 and fake.calls == []
     finally:
         billing.set_client(None)
+
+
+@pytest.mark.asyncio
+async def test_reminder_for_an_appointment_the_client_booked_themselves(channel):
+    from app.agent.orchestrator import Agent
+
+    async with session_scope() as s:
+        user, _ = await service.get_or_create_user(s, "34600000077", None, "es")
+        await service.give_consent(s, user)
+        agent = Agent(client=object())
+        bad = await agent._run_tool(s, user, "save_appointment_reminder", {"what": "Acreditación", "starts_at": "mañana"}, None, None)
+        assert bad["error"] == "date_not_understood"
+        ok = await agent._run_tool(s, user, "save_appointment_reminder",
+                                   {"what": "acreditación del certificado digital", "starts_at": "16/12/2030 10:30", "place": "AEAT Granada"}, None, None)
+        assert ok["saved"] is True
+    from datetime import datetime, timezone
+    day_before = datetime(2030, 12, 15, 11, 0, tzinfo=timezone.utc)
+    assert await notifications.send_external_reminders(day_before) == 1
+    assert "acreditación del certificado digital" in channel.last[1] and "AEAT Granada" in channel.last[1]
+    assert await notifications.send_external_reminders(day_before) == 0
+
+
+def test_certificate_guide_offers_video_and_in_person():
+    from app.agent.prompts import SYSTEM_PROMPT
+
+    assert "obtener-certificado-video-identificacion" in SYSTEM_PROMPT and "mapaoficinascert.appspot.com" in SYSTEM_PROMPT
