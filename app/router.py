@@ -169,8 +169,13 @@ async def _handle(msg: IncomingMessage) -> None:
                 await ch.send_text(msg.phone, t("transcript", lang, text=text))
                 text, source = f"[voice note] {text}", "audio"
             elif msg.has_media:
-                # 6) Document photos.
-                await _handle_document(s, user, msg)
+                # 6) Document photos. A caption ("cita de NIE com este documento") is answered too.
+                if await _handle_document(s, user, msg) and msg.text:
+                    note = (f"(the person sent a photo of a document with this message: \"{msg.text[:600]}\". "
+                            "The details read from it were already sent to them separately for confirmation; do not repeat them. "
+                            "Act on what they asked, e.g. open the request, and ask only what is still missing.)")
+                    reply = await _get_agent().reply(s, user, note, lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text"))
+                    await _deliver(s, user, msg.phone, reply, client_spoke=False)
                 return
 
             # 7) Everything else: conversation (typed or spoken details go through submit_personal_data).
@@ -251,21 +256,37 @@ def _next_step(lang: str, promoted: list, actives: list) -> str:
     return ""
 
 
-async def _handle_document(s, user, msg: IncomingMessage) -> None:
+UNREADABLE = {
+    "pt": "Não consegui ler bem esse documento. Mande uma foto nítida da página com a sua foto, sem reflexo e com os quatro cantos aparecendo. Se preferir, pode escrever ou mandar um áudio com os dados.",
+    "es": "No he podido leer bien el documento. Mándame una foto nítida de la página con tu foto, sin reflejos y con las cuatro esquinas visibles. Si prefieres, escríbeme o mándame un audio con los datos.",
+    "en": "I couldn't read that document well. Send a sharp photo of the photo page, no glare, all four corners visible. Or type your details, or send a voice note.",
+}
+DOC_FAILED = {
+    "pt": "Recebi a foto, mas não consegui abri-la agora. Pode mandar de novo? Se preferir, escreva ou mande um áudio com o nome completo, o número do passaporte e a nacionalidade.",
+    "es": "He recibido la foto, pero no he podido abrirla ahora. ¿Me la mandas otra vez? Si prefieres, escríbeme o mándame un audio con el nombre completo, el número de pasaporte y la nacionalidad.",
+    "en": "I got the photo but couldn't open it just now. Could you send it again? Or type or record your full name, passport number and nationality.",
+}
+
+
+async def _handle_document(s, user, msg: IncomingMessage) -> bool:
+    """Read a document photo and send the read-back. True when the read-back went out."""
     ch = get_channel()
     lang = user.lang
-    image, mime = await ch.download_media(msg)
-    doc = await extract_document(image, mime)
-    del image  # never persisted
+    try:
+        image, mime = await ch.download_media(msg)
+        doc = await extract_document(image, mime)
+        del image  # never persisted
+    except Exception:
+        log.exception("document photo from a client could not be read")
+        audit.record(s, "document_failed", user.id)
+        await ch.send_text(msg.phone, DOC_FAILED.get(lang, DOC_FAILED["pt"]))
+        return False
     if doc.document_kind == "unreadable" or doc.confidence == "low":
         audit.record(s, "document_unreadable", user.id, issues=doc.issues)
-        await ch.send_text(msg.phone, {
-            "pt": "Não consegui ler bem esse documento. Mande uma foto nítida da página com a sua foto, sem reflexo e com os quatro cantos aparecendo. Se preferir, pode escrever ou mandar um áudio com os dados.",
-            "es": "No he podido leer bien el documento. Mándame una foto nítida de la página con tu foto, sin reflejos y con las cuatro esquinas visibles. Si prefieres, escríbeme o mándame un audio con los datos.",
-            "en": "I couldn't read that document well. Send a sharp photo of the photo page, no glare, all four corners visible. Or type your details, or send a voice note.",
-        }[lang])
-        return
+        await ch.send_text(msg.phone, UNREADABLE.get(lang, UNREADABLE["pt"]))
+        return False
     if "expired" in doc.issues:
         await ch.send_text(msg.phone, {"pt": "⚠️ Parece que este documento está vencido.", "es": "⚠️ Parece que este documento está caducado.", "en": "⚠️ This document looks expired."}[lang])
     pending = await service.store_document(s, user, doc)
     await _send_readback(msg.phone, lang, pending)
+    return True
