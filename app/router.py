@@ -23,7 +23,7 @@ from app.voice.tts import SynthesisError, get_synthesizer
 
 log = logging.getLogger(__name__)
 
-DELETE_WORDS = ("APAGA TUDO", "APAGAR TUDO", "APAGUE TUDO", "BORRALO TODO", "BORRAR TODO", "DELETE EVERYTHING", "DELETE MY DATA")
+DELETE_WORDS = ("APAGA TUDO", "APAGAR TUDO", "APAGUE TUDO", "BORRALO TODO", "BORRAR TODO", "BORRA TODO", "DELETE EVERYTHING", "DELETE MY DATA")
 _agent: Agent | None = None
 
 
