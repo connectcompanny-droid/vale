@@ -41,7 +41,7 @@ Write-Host "Website chat on this computer: http://127.0.0.1:8000/chat"
 # Public address for the website chat (and for UAZAPI/Stripe webhooks): set NGROK_DOMAIN in .env.
 $ngrokDomain = ([regex]::Match($envText, "(?im)^\s*NGROK_DOMAIN\s*=\s*(\S+)")).Groups[1].Value
 if ($ngrokDomain -and (Get-Command ngrok -ErrorAction SilentlyContinue)) {
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale public address'; ngrok http --url=$ngrokDomain 8000"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$host.UI.RawUI.WindowTitle='Vale public address'; ngrok http --domain=$ngrokDomain 8000"
     Write-Host "Public chat: https://$ngrokDomain/chat"
 } else {
     Write-Host "To open the chat to clients, set NGROK_DOMAIN=your-domain.ngrok-free.app in .env (free ngrok account) and start again."
