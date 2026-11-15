@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     site_min_gap_seconds: int = 30
     offer_ttl_minutes: int = 10
     headless: bool = True
+    # Local troubleshooting: save a screenshot of the government page when a check fails BEFORE any
+    # personal data is typed (province and trámite steps only). Off on servers.
+    debug_snapshots: bool = False
     # "chrome" = real Google Chrome (current certificate root store, auto-updated). Empty = Playwright's
     # bundled Chromium, whose root store is frozen at its build date and can reject valid certificates.
     browser_channel: str = "auto"  # auto: Chrome on x86_64, bundled Chromium on ARM

@@ -11,6 +11,7 @@ IMPORTANT, before enabling in production:
 """
 
 import asyncio
+from pathlib import Path
 import logging
 import platform
 import random
@@ -167,6 +168,25 @@ class ICPProvider(CitaProvider):
                     return True
         return False
 
+    async def _diagnose(self, page: Page, reason: str) -> None:
+        """What the page looked like when a pre-data step failed. Only called before personal data
+        is typed, so nothing personal is logged or saved."""
+        try:
+            frames = [f.url[:120] for f in page.frames]
+            selects = []
+            for fr in page.frames:
+                for sel in await fr.locator("select").all():
+                    selects.append(f"{await sel.get_attribute('id') or await sel.get_attribute('name') or '?'}:{await sel.locator('option').count()}")
+            title = (await page.title())[:80]
+            text = " ".join((await page.inner_text("body")).split())[:300]
+            log.warning("ICP %s: title=%r frames=%s selects=%s text=%r", reason, title, frames, selects, text)
+            if get_settings().debug_snapshots:
+                folder = Path("debug")
+                folder.mkdir(exist_ok=True)
+                await page.screenshot(path=folder / f"monitor-{reason}.png", full_page=True)
+        except Exception as e:
+            log.warning("ICP %s: could not inspect the page (%s)", reason, e)
+
     async def _blocked(self, page: Page) -> bool:
         try:
             return TEXT["blocked"] in (await page.content()).lower()
@@ -180,10 +200,12 @@ class ICPProvider(CitaProvider):
         await page.wait_for_load_state("networkidle")
         await _pause()
         if not await self._select_by_text(await self._f(page), SEL["province"], lambda t: PROVINCES[province].lower() in t.lower()):
+            await self._diagnose(page, "province_option_not_found")
             return CheckResult("error", reason="province_option_not_found")
         await (await self._f(page)).locator(SEL["accept"]).first.click()
         await _pause()
         if not await self._select_by_text(await self._f(page), SEL["tramite"], lambda t: label_matches(tramite, t)):
+            await self._diagnose(page, "tramite_option_not_found")
             return CheckResult("error", reason="tramite_option_not_found")
         await (await self._f(page)).locator(SEL["accept"]).first.click()
         await _pause()
