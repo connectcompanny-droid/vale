@@ -76,7 +76,7 @@ async def test_messages_are_encrypted_and_deleted_with_the_user(both):
         c.post("/chat/api/send", json={"button_id": "consent:yes", "button_label": "Aceito"}, headers=h)
     async with session_scope() as s:
         rows = (await s.scalars(select(WebMessage))).all()
-        assert rows and all(b"Aceito" not in m.body_encrypted and b"Ol" not in m.body_encrypted for m in rows)
+        assert rows and all(b"Aceito" not in m.body_encrypted and "Olá".encode() not in m.body_encrypted for m in rows)
         user = await s.scalar(select(User))
         key = user.phone
         assert key.startswith("web:") and len(key) == 32

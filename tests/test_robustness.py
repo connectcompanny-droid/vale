@@ -140,3 +140,39 @@ async def test_digital_certificate_interest_is_recorded_once_and_shown_to_the_op
     with TestClient(app) as client:
         assert client.get("/admin/summary?token=adm").json()["digital_certificate_interest"] == 1
         assert "certificado digital" in client.get("/admin?token=adm").text
+
+
+@pytest.mark.asyncio
+async def test_first_message_is_answered_after_consent_and_forgotten_on_no(channel, make_msg):
+    await handle_msg(make_msg("Hola, necesito cita para el NIE en Granada"))
+    await handle_msg(make_msg(button="consent:yes"))
+    assert "necesito cita para el NIE en Granada" in channel.agent.received[-1]
+    await handle_msg(make_msg("Oi", phone="34600000002"))
+    await handle_msg(make_msg(button="consent:no", phone="34600000002"))
+    async with session_scope() as s:
+        from sqlalchemy import select
+
+        from app.models import User
+        assert await s.scalar(select(User).where(User.phone == "34600000002")) is None
+
+
+@pytest.mark.asyncio
+async def test_only_active_provinces_are_open(channel, monkeypatch):
+    from app.citas.catalog import PROVINCES, find_province
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "active_provinces", "granada")
+    assert list(PROVINCES) == ["granada"] and find_province("Madrid") == "madrid"
+    async with session_scope() as s:
+        user, _ = await service.get_or_create_user(s, "34600000003", None, "pt")
+        await service.give_consent(s, user)
+        with pytest.raises(service.RuleError):
+            await service.create_request(s, user, "madrid", "nie")
+    monkeypatch.setattr(get_settings(), "active_provinces", "granada,madrid")
+    assert "madrid" in PROVINCES
+
+
+async def handle_msg(m):
+    from app.router import handle
+
+    await handle(m)

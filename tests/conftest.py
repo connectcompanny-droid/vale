@@ -8,6 +8,7 @@ os.environ.setdefault("FERNET_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("WEBHOOK_SECRET", "test-secret")
 os.environ.setdefault("SITE_MIN_GAP_SECONDS", "0")
 os.environ.setdefault("QUEUE_MODE", "inline")
+os.environ.setdefault("ACTIVE_PROVINCES", "granada,madrid,barcelona")
 
 from app import db, router  # noqa: E402
 from app.channels import Button, Channel, IncomingMessage, set_channel  # noqa: E402

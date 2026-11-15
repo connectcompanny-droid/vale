@@ -19,7 +19,7 @@ import uuid
 
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
-from app.citas.catalog import PROVINCES, TRAMITES, label_matches
+from app.citas.catalog import ALL_PROVINCES as PROVINCES, TRAMITES, label_matches
 from app.citas.providers.base import BookResult, CheckResult, CitaProvider, Slot
 from app.config import get_settings
 

@@ -93,7 +93,12 @@ async def _handle(msg: IncomingMessage) -> None:
             # 1) Consent gate: nothing is processed before an explicit yes.
             if button == "consent:yes":
                 await service.give_consent(s, user)
-                reply = await _get_agent().reply(s, user, "(the user just accepted the privacy terms; greet and ask what they need)", lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text"))
+                first = next((h.get("content") for h in (user.history or []) if h.get("role") == "first"), None)
+                user.history = []
+                note = ("(the person just accepted the privacy terms. Before accepting they had written: \"" + first[:600] + "\". "
+                        "Greet them briefly by answering that message as a person would; if it already says what they need, act on it.)"
+                        if first else "(the person just accepted the privacy terms; greet them warmly in one or two sentences and ask what brings them here)")
+                reply = await _get_agent().reply(s, user, note, lambda: _ask_delete(msg.phone, lang), _data_hook(s, user, msg.phone, "text"))
                 await _deliver(s, user, msg.phone, reply, client_spoke=False)
                 return
             if button == "consent:no":
@@ -101,6 +106,9 @@ async def _handle(msg: IncomingMessage) -> None:
                 await ch.send_text(msg.phone, t("consent_declined", lang))
                 return
             if user.consent_at is None:
+                if msg.text and not msg.has_media and not button:
+                    # Kept only until they answer: used to reply to it after "yes", erased with the user on "no".
+                    user.history = [{"role": "first", "content": msg.text[:600]}]
                 await ch.send_buttons(msg.phone, _consent_text(lang), [
                     Button("consent:yes", t("consent_yes", lang)), Button("consent:no", t("consent_no", lang)),
                 ])

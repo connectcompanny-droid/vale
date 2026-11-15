@@ -53,12 +53,39 @@ TRAMITES: dict[str, Tramite] = {
     ),
 }
 
-# Launch provinces (see the go-to-market plan): start narrow, expand after validation.
-PROVINCES: dict[str, str] = {
+# Provinces Vale knows. Which ones are open to clients is ACTIVE_PROVINCES (config): start narrow,
+# open each one only after its site flow has been validated with scripts/try_icp.py.
+ALL_PROVINCES: dict[str, str] = {
     "granada": "Granada",
     "madrid": "Madrid",
     "barcelona": "Barcelona",
 }
+
+
+def _active() -> dict[str, str]:
+    from app.config import get_settings
+
+    keys = [k.strip().lower() for k in get_settings().active_provinces.split(",") if k.strip()]
+    return {k: v for k, v in ALL_PROVINCES.items() if k in keys} or {"granada": "Granada"}
+
+
+class _Provinces(dict):
+    """Read-through view of the active provinces, so a .env change needs no code change."""
+
+    def _d(self):
+        return _active()
+
+    def __getitem__(self, k): return self._d()[k]
+    def __contains__(self, k): return k in self._d()
+    def __iter__(self): return iter(self._d())
+    def __len__(self): return len(self._d())
+    def keys(self): return self._d().keys()
+    def values(self): return self._d().values()
+    def items(self): return self._d().items()
+    def get(self, k, default=None): return self._d().get(k, default)
+
+
+PROVINCES: dict[str, str] = _Provinces()
 
 
 def normalize(text: str) -> str:
@@ -71,7 +98,7 @@ def _words(text: str) -> set[str]:
 
 def find_province(value: str) -> str | None:
     v = normalize(value).lower()
-    for key, name in PROVINCES.items():
+    for key, name in ALL_PROVINCES.items():
         if v in (key, normalize(name).lower()):
             return key
     return None

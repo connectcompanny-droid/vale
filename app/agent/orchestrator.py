@@ -31,7 +31,7 @@ TOOLS = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "province": {"type": "string", "description": f"One of: {', '.join(PROVINCES)}"},
+                "province": {"type": "string", "description": "One of the supported provinces listed in the instructions"},
                 "tramite_code": {"type": "string", "enum": list(TRAMITES)},
             },
             "required": ["province", "tramite_code"],
@@ -169,13 +169,13 @@ class Agent:
             provinces=", ".join(PROVINCES.values()),
             tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['pt'])}" for t in TRAMITES.values()),
         )
-        history = list(user.history or [])[-MAX_HISTORY:]
+        history = [h for h in (user.history or []) if h.get("role") in ("user", "assistant")][-MAX_HISTORY:]
         messages: list[dict] = [*history, {"role": "user", "content": text}]
         final = ""
         for _ in range(MAX_STEPS):
             async with llm.limiter():
                 resp = await self.client.messages.create(
-                    model=get_settings().claude_model, max_tokens=700, system=system, tools=TOOLS, messages=messages,
+                    model=get_settings().claude_model, max_tokens=900, system=system, tools=TOOLS, messages=messages,
                 )
             messages.append({"role": "assistant", "content": [b.model_dump() for b in resp.content]})
             if resp.stop_reason != "tool_use":

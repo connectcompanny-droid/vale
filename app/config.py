@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     evolution_api_key: str = ""
     evolution_instance: str = "vale"
 
+    # Provinces open to clients (comma separated keys from the catalog). Start with the validated ones.
+    active_provinces: str = "granada"
+
     # Website chat (second channel). Served by the API at /chat.
     web_chat_enabled: bool = True
     web_history_days: int = 30
