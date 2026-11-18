@@ -75,7 +75,13 @@ def enabled_sites() -> set[str]:
 
 
 def tramite_enabled(code: str) -> bool:
-    return code in TRAMITES and TRAMITES[code].site in enabled_sites()
+    """Can clients open a request for it? With the robot on, only on validated sites. In assisted
+    mode (AUTO_CHECKS=false) a person books every procedure, so all of them are open."""
+    from app.config import get_settings
+
+    if code not in TRAMITES:
+        return False
+    return (not get_settings().auto_checks) or TRAMITES[code].site in enabled_sites()
 
 
 def codes_for(site: str) -> set[str]:

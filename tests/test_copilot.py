@@ -60,3 +60,22 @@ async def test_copilot_flow(channel, operator, make_msg):
     assert "JUST99" in channel.last[1]
     async with session_scope() as s:
         assert (await s.get(CitaRequest, req_id)).state == RequestState.booked
+
+
+@pytest.mark.asyncio
+async def test_certificate_appointment_goes_to_the_operator_in_assisted_mode(channel, operator, provider):
+    from app.citas.monitor import Monitor
+    from app.main import app
+
+    async with session_scope() as s:
+        user, _ = await service.get_or_create_user(s, "34600000022", None, "es")
+        await service.give_consent(s, user)
+        doc = await service.save_pending_data(s, user, PROFILE, source="text")
+        await service.confirm_pending(s, user, doc.id)
+        req = await service.create_request(s, user, "granada", "acreditacion_certificado")
+        assert req.state == RequestState.monitoring and req.mode == "operator"
+    await Monitor(provider).tick()
+    assert "nuestro equipo se encarga" in channel.last[1]
+    with TestClient(app, client=("127.0.0.1", 5000)) as c:
+        item = c.get("/admin/copilot/queue", headers=H).json()["items"][0]
+        assert item["site"] == "aeat" and item["client"]["nie"] == "Y1234567X"

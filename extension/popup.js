@@ -4,6 +4,7 @@ $("save").addEventListener("click", async () => {
   await chrome.storage.local.set({ token: $("token").value.trim() });
   load();
 });
+$("open2").addEventListener("click", () => chrome.tabs.create({ url: "https://www2.agenciatributaria.gob.es/wlpl/TOCP-MUTE/internet/identificacion" }));
 $("open").addEventListener("click", () => chrome.tabs.create({ url: "https://icp.administracionelectronica.gob.es/icpplus/index.html" }));
 
 function load() {

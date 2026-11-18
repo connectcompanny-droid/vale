@@ -1,17 +1,38 @@
 {
   "manifest_version": 3,
   "name": "Vale Copiloto",
-  "version": "1.0.0",
-  "description": "Copiloto del operador de Vale: rellena los datos del cliente en la web de cita previa cuando el operador lo pide, y avisa al cliente.",
-  "permissions": ["storage", "notifications", "alarms"],
-  "host_permissions": ["http://127.0.0.1:8000/*", "http://localhost:8000/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "Vale Copiloto" },
+  "version": "1.1.0",
+  "description": "Copiloto del operador de Vale: rellena los datos del cliente en la web de cita previa de extranjería y de la Agencia Tributaria cuando el operador lo pide, y avisa al cliente.",
+  "permissions": [
+    "storage",
+    "notifications",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vale Copiloto"
+  },
   "content_scripts": [
     {
-      "matches": ["https://icp.administracionelectronica.gob.es/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://icp.administracionelectronica.gob.es/*",
+        "https://www1.agenciatributaria.gob.es/*",
+        "https://www2.agenciatributaria.gob.es/*",
+        "https://sede.agenciatributaria.gob.es/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "all_frames": true,
       "run_at": "document_idle"
     }

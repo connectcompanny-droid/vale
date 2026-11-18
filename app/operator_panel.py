@@ -183,6 +183,7 @@ def _client(r: CitaRequest, profile: dict) -> dict:
     nie = str(profile.get("nie") or "")
     return {
         "doc_type": "nie" if nie else "passport",
+        "nie": nie,
         "number": nie or str(profile.get("document_number") or ""),
         "name": str(profile.get("full_name", "")).upper(),
         "nationality": str(profile.get("nationality", "")).upper(),
@@ -201,7 +202,7 @@ async def copilot_queue(request: Request, x_vale_token: str | None = Header(defa
             tr = TRAMITES[r.tramite_code]
             offer = next((o for o in reversed(r.offers) if o.state in (OfferState.pending, OfferState.approved)), None)
             items.append({
-                "id": r.id, "state": r.state.value, "tramite_code": r.tramite_code,
+                "id": r.id, "state": r.state.value, "tramite_code": r.tramite_code, "site": tr.site,
                 "tramite": tr.label["es"], "match": list(tr.match), "province": ALL_PROVINCES.get(r.province, r.province),
                 "waiting_since": service.aware(r.created_at).isoformat(), "checks": r.checks,
                 "client": _client(r, await service.get_profile(s, r.user_id)),

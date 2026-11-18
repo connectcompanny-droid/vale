@@ -67,8 +67,10 @@ WEB_NOTE = (
 
 CERT_BOOKING_ON = (
     "Vale books it for them. Open a request with create_cita_request using tramite_code acreditacion_certificado "
-    "(it needs their full name and NIE, confirmed through the usual read-back). Vale then looks for a slot at the "
-    "Agencia Tributaria office and offers it for confirmation, exactly like an extranjería cita."
+    "(it needs their full name and NIE, confirmed through the usual read-back; ask for the NIE if the profile only has a "
+    "passport). Vale looks for a slot at an Agencia Tributaria office in their province and offers it here for "
+    "confirmation, exactly like an extranjería cita. Remind them to bring the FNMT request code from step 1 to the "
+    "appointment, so they should do step 1 first."
 )
 CERT_BOOKING_OFF = (
     "Vale cannot book it for them yet. Say so plainly, give the office finder so they book it on the office's own "

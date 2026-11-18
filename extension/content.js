@@ -18,8 +18,13 @@
     email2: "#emailDOS",
     office: "#idSede",
     slots: "input[type='radio'][name^='rdbCita']",
-    buttons: "#btnAceptar, #btnEntrar, #btnEnviar, #btnSiguiente, #btnConfirmar, #btnSubmit",
+    buttons: "#btnAceptar, #btnEntrar, #btnEnviar, #btnSiguiente, #btnConfirmar, #btnSubmit, button[type=submit], input[type=submit]",
   };
+  // Which appointment system this page belongs to. "icp" = extranjería, "aeat" = Agencia Tributaria
+  // (identity appointment for the digital certificate). On AEAT the form ids are not known in
+  // advance, so fields are found by their labels, and every value also has a copy button.
+  const SITE = /agenciatributaria\.gob\.es$/.test(location.hostname) ? "aeat" : "icp";
+  const SITE_NAME = { icp: "Extranjería", aeat: "Agencia Tributaria · certificado digital" }[SITE];
   const $ = (s, root = document) => root.querySelector(s);
   const $$ = (s, root = document) => [...root.querySelectorAll(s)];
   const norm = (t) => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -33,7 +38,7 @@
     });
 
   // Only the frame that holds the form shows the panel.
-  const hasForm = () => !!$(`${SEL.province}, ${SEL.tramite}, ${SEL.number}, ${SEL.office}, ${SEL.slots}, ${SEL.phone}`) || /justificante/i.test(document.body.innerText || "");
+  const hasForm = () => SITE === "aeat" ? !!$("form, input, select") : !!$(`${SEL.province}, ${SEL.tramite}, ${SEL.number}, ${SEL.office}, ${SEL.slots}, ${SEL.phone}`) || /justificante/i.test(document.body.innerText || "");
   if (!hasForm()) return;
 
   // ---------- filling (fires the events the site listens to) ----------
@@ -66,7 +71,46 @@
     if (b) b.classList.add("vale-next");
   }
 
+  function labelText(el) {
+    const bits = [el.name, el.id, el.getAttribute("placeholder"), el.getAttribute("aria-label"), el.getAttribute("title")];
+    if (el.id) { const l = document.querySelector(`label[for="${CSS.escape(el.id)}"]`); if (l) bits.push(l.innerText); }
+    const wrap = el.closest("label"); if (wrap) bits.push(wrap.innerText);
+    const prev = el.closest("td, div, p")?.previousElementSibling; if (prev) bits.push(prev.innerText);
+    return norm(bits.filter(Boolean).join(" "));
+  }
+  // Field kinds by the words around them (Spanish forms).
+  const KINDS = [
+    ["number", /\b(NIF|NIE|DNI|DOCUMENTO|IDENTIFICACION)\b/],
+    ["surname1", /\b(PRIMER APELLIDO|APELLIDO 1|APELLIDO1)\b/],
+    ["name", /\b(NOMBRE|APELLIDOS Y NOMBRE|RAZON SOCIAL)\b/],
+    ["phone", /\b(TELEFONO|MOVIL|MOBILE)\b/],
+    ["email", /\b(CORREO|EMAIL|E MAIL)\b/],
+  ];
+  function fillByLabels(item) {
+    const c = item.client, done = new Set();
+    const values = { number: c.nie || c.number, surname1: c.name.split(" ").slice(-1)[0], name: c.name, phone: c.phone, email: c.email };
+    for (const el of $$("input[type=text], input[type=tel], input[type=email], input:not([type])")) {
+      if (el.offsetParent === null || el.value) continue;
+      const lab = labelText(el);
+      const kind = (KINDS.find(([, re]) => re.test(lab)) || [])[0];
+      if (kind && values[kind] && setValue(el, values[kind])) done.add({ number: "NIE", surname1: "apellido", name: "nombre", phone: "teléfono", email: "email" }[kind]);
+    }
+    // Service lists: pick the option about the electronic certificate, and a Granada office.
+    for (const sel of $$("select")) {
+      const lab = labelText(sel);
+      if (/SERVICIO|TRAMITE|GESTION|MATERIA|ASUNTO/.test(lab) && selectByText(sel, (t) => /CERTIFICADO (ELECTRONICO|DIGITAL)|ACREDITACION/.test(t))) done.add("servicio");
+      else if (/PROVINCIA/.test(lab) && selectByText(sel, (t) => t.includes(norm(item.province)))) done.add("provincia");
+      else if (/OFICINA|DELEGACION|ADMINISTRACION|LOCALIDAD|MUNICIPIO/.test(lab) && selectByText(sel, (t) => t.includes(norm(item.province)))) done.add("oficina");
+    }
+    for (const r of $$("input[type=radio], input[type=checkbox]")) {
+      const lab = labelText(r);
+      if (/CERTIFICADO (ELECTRONICO|DIGITAL)|ACREDITACION.*CERTIFICADO/.test(lab) && check(r)) done.add("servicio");
+    }
+    return [...done];
+  }
+
   function fillStep(item) {
+    if (SITE === "aeat") { const d = fillByLabels(item); highlightNext(); return d; }
     const done = [];
     const c = item.client;
     if ($(SEL.province) && selectByText($(SEL.province), (t) => t.includes(norm(item.province)))) done.push("provincia");
@@ -87,6 +131,16 @@
 
   // ---------- reading the page ----------
   function readSlots() {
+    if (SITE === "aeat") {
+      const cands = $$("input[type=radio], button, a").filter((el) => el.offsetParent !== null && !el.closest("#vale-copilot"));
+      return cands.map((el) => {
+        const row = el.closest("tr, li, label") || el.parentElement;
+        const text = ((el.tagName === "INPUT" ? row?.innerText : el.innerText) || "").replace(/\s+/g, " ").trim();
+        const date = text.match(/\d{1,2}[/.-]\d{1,2}[/.-]\d{4}/), time = text.match(/\b\d{1,2}:\d{2}\b/);
+        return date || time ? { radio: el, office: (document.body.innerText.match(/(DELEGACI[OÓ]N|ADMINISTRACI[OÓ]N)[^\n]{0,60}/i) || [""])[0].trim(),
+          starts_at: [date && date[0], time && time[0]].filter(Boolean).join(" "), text } : null;
+      }).filter(Boolean).slice(0, 12);
+    }
     const office = $(SEL.office) ? $(SEL.office).selectedOptions[0]?.text.trim() : "";
     return $$(SEL.slots).map((r) => {
       const row = r.closest("tr, li, label, div") || r.parentElement;
@@ -99,7 +153,7 @@
   function readReference() {
     const text = (document.body.innerText || "").replace(/\s+/g, " ");
     // The receipt code: after the word "justificante", an upper-case code that contains a digit.
-    const m = text.match(/[Jj]ustificante[\s\S]{0,60}?\b([A-Z0-9]*\d[A-Z0-9]*)\b/);
+    const m = text.match(/(?:[Jj]ustificante|[Ll]ocalizador|[Nn][úu]mero de cita|[Cc][óo]digo de cita)[\s\S]{0,60}?\b([A-Z0-9]*\d[A-Z0-9]*)\b/);
     if (m && m[1].length < 6) return "";
     return m ? m[1] : "";
   }
@@ -119,7 +173,7 @@
 
   async function refresh() {
     try {
-      queue = (await api("/admin/copilot/queue")).items;
+      queue = (await api("/admin/copilot/queue")).items.filter((i) => (i.site || "icp") === SITE);
     } catch (e) {
       body.textContent = ""; say(e.message, "err"); return;
     }
@@ -130,7 +184,8 @@
 
   function render() {
     body.textContent = "";
-    if (!current) { say("No hay clientes en la cola."); return; }
+    say(SITE_NAME, "site");
+    if (!current) { say("No hay clientes en la cola para esta web."); return; }
     const urgent = queue.filter((i) => i.state === "booking");
     if (urgent.length && current.state !== "booking") say(`⚠ ${urgent.length} cliente(s) confirmaron: resérvalos primero.`, "warn");
 
@@ -143,7 +198,16 @@
     body.append(pick);
 
     const c = current.client;
-    say(`${c.name} · ${c.doc_type === "nie" ? "NIE" : "Pasaporte"} ${c.number}`);
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    for (const [label, value] of [["NIE/Doc.", c.nie || c.number], ["Nombre", c.name], ["País", c.nationality], ["Tel.", c.phone], ["Email", c.email]]) {
+      if (!value) continue;
+      const b = document.createElement("button");
+      b.type = "button"; b.title = "Copiar"; b.textContent = `${label}: ${value}`;
+      b.onclick = () => navigator.clipboard.writeText(value).then(() => { b.classList.add("copied"); setTimeout(() => b.classList.remove("copied"), 900); });
+      chips.append(b);
+    }
+    body.append(chips);
     if (current.state === "booking") say(`Confirmado por el cliente: ${current.offer.office} · ${current.offer.starts_at}. Elige ese hueco y confirma en la web.`, "warn");
 
     btn("Rellenar este paso", () => {
@@ -161,6 +225,15 @@
         try { await api(`/admin/copilot/${current.id}/offer`, "POST", { office, starts_at: when }); say("Enviado al cliente. Te aviso cuando confirme.", "ok"); refresh(); }
         catch (e) { say(e.message, "err"); ev.target.disabled = false; }
       }));
+    }
+    if (current.state === "monitoring") {
+      btn("Proponer un hueco a mano", async (ev) => {
+        const office = prompt("Oficina", ""); if (!office) return;
+        const when = prompt("Fecha y hora (DD/MM/AAAA HH:MM)", ""); if (!when) return;
+        ev.target.disabled = true;
+        try { await api(`/admin/copilot/${current.id}/offer`, "POST", { office, starts_at: when }); say("Enviado al cliente.", "ok"); refresh(); }
+        catch (e) { say(e.message, "err"); ev.target.disabled = false; }
+      }, "ghost");
     }
     if (current.state === "booking" && slots.length) {
       const wanted = norm(current.offer.starts_at);
@@ -187,7 +260,7 @@
         try { await api(`/admin/copilot/${current.id}/gone`, "POST"); say("Avisado al cliente; vuelve a la cola.", "ok"); refresh(); } catch (e) { say(e.message, "err"); }
       }, "ghost");
     }
-    if (current.state === "monitoring" && /no hay citas/i.test(document.body.innerText || "")) {
+    if (current.state === "monitoring" && /no hay citas|no existen citas|no hay huecos|sin disponibilidad|no hay disponibilidad/i.test(document.body.innerText || "")) {
       btn(`Sin huecos: anotar para todos los de «${current.tramite}»`, async () => {
         try { const r = await api("/admin/copilot/checked", "POST", { tramite_code: current.tramite_code }); say(`Anotado (${r.marked}). Vale aprende de estas horas.`, "ok"); } catch (e) { say(e.message, "err"); }
       }, "ghost");

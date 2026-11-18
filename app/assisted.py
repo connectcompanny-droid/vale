@@ -73,10 +73,12 @@ async def send_kits() -> int:
                                 .where(CitaRequest.state == RequestState.monitoring, CitaRequest.kit_sent_at.is_(None)))).all()
         jobs = []
         for r in reqs:
-            if TRAMITES[r.tramite_code].site != "icp":
-                continue  # other systems have their own guidance in the conversation
-            profile = await service.get_profile(s, r.user_id)
-            text = booking_kit(r, profile, r.user.lang) if r.mode == "self" else t("operator_waiting", r.user.lang)
+            if r.mode == "operator":
+                text = t("operator_waiting", r.user.lang)
+            elif TRAMITES[r.tramite_code].site == "icp":
+                text = booking_kit(r, await service.get_profile(s, r.user_id), r.user.lang)
+            else:
+                continue  # other systems: the agent guides the client in the conversation
             jobs.append((r.id, r.user.phone, text))
     sent = 0
     for req_id, phone, text in jobs:
