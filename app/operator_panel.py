@@ -158,3 +158,156 @@ async def checked(request: Request, request_id: int, token: str = Form("")):
         async with session_scope() as s:
             await service.operator_checked(s, request_id)
     return await _act(request, token, run)
+
+
+# ---------------- Copilot API (used by the Vale Copilot Chrome extension) ----------------
+# Same guard as the panel: local only, ADMIN_TOKEN in the X-Vale-Token header. The extension
+# never acts on the government site by itself: it fills fields and reads pages when the
+# operator presses its buttons, and the operator presses the site's own buttons.
+
+from collections import Counter  # noqa: E402
+
+from pydantic import BaseModel, Field  # noqa: E402
+from sqlalchemy import select  # noqa: E402
+
+from fastapi import Header  # noqa: E402
+
+from app.models import AuditEvent  # noqa: E402
+
+
+def _guard_api(request: Request, token: str | None) -> None:
+    _guard(request, token or "")
+
+
+def _client(r: CitaRequest, profile: dict) -> dict:
+    nie = str(profile.get("nie") or "")
+    return {
+        "doc_type": "nie" if nie else "passport",
+        "number": nie or str(profile.get("document_number") or ""),
+        "name": str(profile.get("full_name", "")).upper(),
+        "nationality": str(profile.get("nationality", "")).upper(),
+        "phone": service.gov_phone(r.user.phone, profile),
+        "email": str(profile.get("email", "")),
+    }
+
+
+@router.get("/admin/copilot/queue")
+async def copilot_queue(request: Request, x_vale_token: str | None = Header(default=None)) -> dict:
+    _guard_api(request, x_vale_token)
+    async with session_scope() as s:
+        items = []
+        for r in await service.operator_queue(s):
+            await s.refresh(r, ["offers"])
+            tr = TRAMITES[r.tramite_code]
+            offer = next((o for o in reversed(r.offers) if o.state in (OfferState.pending, OfferState.approved)), None)
+            items.append({
+                "id": r.id, "state": r.state.value, "tramite_code": r.tramite_code,
+                "tramite": tr.label["es"], "match": list(tr.match), "province": ALL_PROVINCES.get(r.province, r.province),
+                "waiting_since": service.aware(r.created_at).isoformat(), "checks": r.checks,
+                "client": _client(r, await service.get_profile(s, r.user_id)),
+                "offer": {"office": offer.office, "starts_at": offer.starts_at, "expires_at": service.aware(offer.expires_at).isoformat()}
+                if offer else None,
+            })
+    return {"items": items, "site": BASE_URL}
+
+
+class OfferBody(BaseModel):
+    office: str = Field(min_length=2, max_length=200)
+    starts_at: str = Field(min_length=5, max_length=60)
+
+
+class BookedBody(BaseModel):
+    reference: str = Field(default="", max_length=120)
+
+
+class CheckedBody(BaseModel):
+    tramite_code: str
+
+
+async def _offer(request_id: int, office: str, starts_at: str) -> None:
+    from app.channels import Button, get_channel
+
+    async with session_scope() as s:
+        o = await service.operator_offer(s, request_id, office, starts_at)
+        req = await s.get(CitaRequest, request_id, options=[selectinload(CitaRequest.user)])
+        phone, lang, oid, off, when = req.user.phone, req.user.lang, o.id, o.office, o.starts_at
+    await get_channel().send_buttons(phone, t("offer", lang, office=off, starts_at=when, ttl=get_settings().offer_ttl_minutes), [
+        Button(f"offer:{oid}:confirm", t("confirm", lang)), Button(f"offer:{oid}:reject", t("reject", lang))])
+
+
+async def _booked(request_id: int, reference: str) -> None:
+    from app.channels import get_channel
+
+    async with session_scope() as s:
+        req, o = await service.operator_booked(s, request_id, reference)
+        await s.refresh(req, ["user"])
+        phone, lang, off, when, ref = req.user.phone, req.user.lang, o.office, o.starts_at, req.note or ""
+    await get_channel().send_text(phone, t("booked", lang, office=off, starts_at=when, reference=ref))
+
+
+async def _gone(request_id: int) -> None:
+    from app.channels import get_channel
+
+    async with session_scope() as s:
+        req = await service.operator_slot_gone(s, request_id)
+        await s.refresh(req, ["user"])
+        phone, lang = req.user.phone, req.user.lang
+    await get_channel().send_text(phone, t("offer_expired", lang))
+
+
+async def _api(request: Request, token: str | None, coro_fn) -> dict:
+    _guard_api(request, token)
+    try:
+        await coro_fn()
+    except service.RuleError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    return {"ok": True}
+
+
+@router.post("/admin/copilot/{request_id}/offer")
+async def copilot_offer(request: Request, request_id: int, body: OfferBody, x_vale_token: str | None = Header(default=None)) -> dict:
+    return await _api(request, x_vale_token, lambda: _offer(request_id, body.office, body.starts_at))
+
+
+@router.post("/admin/copilot/{request_id}/booked")
+async def copilot_booked(request: Request, request_id: int, body: BookedBody, x_vale_token: str | None = Header(default=None)) -> dict:
+    return await _api(request, x_vale_token, lambda: _booked(request_id, body.reference))
+
+
+@router.post("/admin/copilot/{request_id}/gone")
+async def copilot_gone(request: Request, request_id: int, x_vale_token: str | None = Header(default=None)) -> dict:
+    return await _api(request, x_vale_token, lambda: _gone(request_id))
+
+
+@router.post("/admin/copilot/checked")
+async def copilot_checked(request: Request, body: CheckedBody, x_vale_token: str | None = Header(default=None)) -> dict:
+    """The operator looked and found nothing for this trámite: one check for everyone waiting on it."""
+    _guard_api(request, x_vale_token)
+    async with session_scope() as s:
+        n = 0
+        for r in await service.operator_queue(s):
+            if r.tramite_code == body.tramite_code and r.state == RequestState.monitoring:
+                await service.operator_checked(s, r.id)
+                n += 1
+    return {"ok": True, "marked": n}
+
+
+@router.get("/admin/copilot/hints")
+async def copilot_hints(request: Request, x_vale_token: str | None = Header(default=None)) -> dict:
+    """When slots have been found so far (Madrid hour), from the operator's own history. Plain
+    counts, no guesswork: with little data it says so."""
+    from app.notifications import MADRID
+
+    _guard_api(request, x_vale_token)
+    async with session_scope() as s:
+        rows = (await s.execute(select(AuditEvent.action, AuditEvent.created_at, AuditEvent.detail)
+                                .where(AuditEvent.action.in_(("offer_created", "checked"))))).all()
+    found, looked = Counter(), Counter()
+    for action, at, detail in rows:
+        hour = service.aware(at).astimezone(MADRID).hour
+        (found if action == "offer_created" else looked)[hour] += 1
+    total_found = sum(found.values())
+    best = [{"hour": h, "found": n, "checks": looked[h] + n} for h, n in found.most_common(3)]
+    return {"slots_found": total_found, "best_hours": best,
+            "enough_data": total_found >= 5,
+            "note": "Con pocos datos todavía; revisa a distintas horas para que Vale aprenda." if total_found < 5 else ""}

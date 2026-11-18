@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<style>
+body{font-family:system-ui,sans-serif;width:340px;margin:0;padding:14px;background:#f6f1e7;color:#10234a}
+h1{font-size:16px;margin:0 0 10px} label{display:block;font-size:12px;margin:8px 0 4px;color:#4a5878}
+input{width:100%;box-sizing:border-box;padding:8px;border:2px solid #10234a}
+button{margin-top:10px;background:#10234a;color:#fff;border:0;padding:9px 12px;cursor:pointer;width:100%}
+.q{margin-top:12px;font-size:13px} .q li{margin:4px 0} .hot{background:#3ddc97;padding:2px 6px;font-weight:700}
+a{color:#10234a} small{color:#4a5878}
+</style></head><body>
+<h1>Vale Copiloto</h1>
+<label for="token">Token del panel (ADMIN_TOKEN)</label>
+<input id="token" type="password" autocomplete="off">
+<button id="save">Guardar</button>
+<div class="q" id="q"></div>
+<p><a id="open" href="#">Abrir la web de cita previa</a></p>
+<small>El copiloto solo rellena y lee cuando pulsas sus botones. Los botones de la web los pulsas tú.</small>
+<script src="popup.js"></script>
+</body></html>
