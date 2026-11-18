@@ -29,6 +29,10 @@ from app.web_chat import router as web_chat_router  # noqa: E402
 
 app.include_router(web_chat_router)
 
+from app.operator_panel import router as operator_router  # noqa: E402
+
+app.include_router(operator_router)
+
 
 @app.get("/health")
 async def health() -> dict:

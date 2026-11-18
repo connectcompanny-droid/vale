@@ -7,6 +7,7 @@ code before anything reaches the LLM.
 import logging
 
 from app import audit
+from app import assisted
 from app.agent import relevance
 from app.agent.orchestrator import Agent
 from app.channels import web as web_channel
@@ -173,8 +174,14 @@ async def _handle(msg: IncomingMessage) -> None:
                 _, offer_id, action = button.split(":")
                 try:
                     if action == "confirm":
-                        await service.approve_offer(s, user, int(offer_id))
-                        await ch.send_text(msg.phone, t("booking", lang))
+                        offer = await service.approve_offer(s, user, int(offer_id))
+                        if get_settings().auto_checks:
+                            await ch.send_text(msg.phone, t("booking", lang))
+                        else:  # a person books it: tell the client and the operator
+                            await ch.send_text(msg.phone, t("booking_by_team", lang))
+                            await assisted.notify_operator(
+                                f"✅ Cliente confirmó. Reservar YA en la web oficial: {offer.office}, {offer.starts_at} "
+                                f"(solicitud {offer.request_id}). Panel: /admin/operador")
                     else:
                         await service.reject_offer(s, user, int(offer_id))
                         await ch.send_text(msg.phone, t("offer_rejected", lang))

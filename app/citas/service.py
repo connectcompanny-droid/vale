@@ -218,7 +218,10 @@ async def create_request(session: AsyncSession, user: User, province: str, trami
             raise RuleError("already_active_for_this_tramite")
     profile = await get_profile(session, user.id)
     state = ready_state(None, profile, tramite_code, user.phone)
-    req = CitaRequest(user_id=user.id, province=province, tramite_code=tramite_code, state=state, active_key="1")
+    mode = get_settings().default_booking_mode if get_settings().default_booking_mode in ("self", "operator") else "self"
+    if mode == "operator" and not get_settings().operator_enabled:
+        mode = "self"
+    req = CitaRequest(user_id=user.id, province=province, tramite_code=tramite_code, state=state, active_key="1", mode=mode)
     session.add(req)
     await session.flush()
     audit.record(session, "request_created", user.id, req.id, province=province, tramite=tramite_code, state=state.value)
@@ -389,3 +392,81 @@ async def mark_booked(session: AsyncSession, req: CitaRequest, reference: str | 
     _close(req, RequestState.booked)
     req.note = reference
     audit.record(session, "booked", req.user_id, req.id, reference=reference)
+
+
+# ---------- assisted mode (the robot does not book: the client or an operator does) ----------
+
+async def set_mode(session: AsyncSession, user: User, request_id: int, mode: str) -> CitaRequest:
+    if mode not in ("self", "operator"):
+        raise RuleError("invalid_mode")
+    if mode == "operator" and not get_settings().operator_enabled:
+        raise RuleError("operator_not_available")
+    req = await session.get(CitaRequest, request_id)
+    if not req or req.user_id != user.id or req.state not in ACTIVE_STATES:
+        raise RuleError("request_not_found")
+    req.mode = mode
+    audit.record(session, "mode_set", user.id, req.id, mode=mode)
+    return req
+
+
+async def record_client_booking(session: AsyncSession, user: User, request_id: int, starts_at: str, office: str,
+                                reference: str | None = None) -> CitaRequest:
+    """The client booked it themselves (self mode). Stored like any booked cita, so the
+    day-before reminder and the status work the same way."""
+    req = await session.get(CitaRequest, request_id)
+    if not req or req.user_id != user.id or req.state not in ACTIVE_STATES:
+        raise RuleError("request_not_found")
+    session.add(SlotOffer(request_id=req.id, office=office[:200] or "-", starts_at=starts_at[:60], raw={"by": "client"},
+                          state=OfferState.approved, expires_at=utcnow()))
+    await mark_booked(session, req, reference)
+    audit.record(session, "booked_by_client", user.id, req.id)
+    return req
+
+
+async def operator_queue(session: AsyncSession) -> list[CitaRequest]:
+    """What the operator works on: operator-mode requests waiting for a slot, offers out, and
+    confirmed offers to book now (these first)."""
+    rows = (await session.scalars(
+        select(CitaRequest).options(selectinload(CitaRequest.user), selectinload(CitaRequest.offers))
+        .where(CitaRequest.state.in_((RequestState.booking, RequestState.offer_pending, RequestState.monitoring)))
+        .order_by(CitaRequest.created_at)
+    )).all()
+    order = {RequestState.booking: 0, RequestState.offer_pending: 1, RequestState.monitoring: 2}
+    rows = [r for r in rows if r.mode == "operator" or r.state == RequestState.booking]
+    return sorted(rows, key=lambda r: order[r.state])
+
+
+async def operator_offer(session: AsyncSession, request_id: int, office: str, starts_at: str) -> SlotOffer:
+    req = await session.get(CitaRequest, request_id)
+    if not req or req.state != RequestState.monitoring:
+        raise RuleError("request_not_waiting")
+    offer = await create_offer(session, req, office.strip()[:200], starts_at.strip()[:60], {"by": "operator"})
+    return offer
+
+
+async def operator_booked(session: AsyncSession, request_id: int, reference: str) -> tuple[CitaRequest, SlotOffer]:
+    req = await session.get(CitaRequest, request_id, options=[selectinload(CitaRequest.offers)])
+    if not req or req.state != RequestState.booking:
+        raise RuleError("not_confirmed_by_client")
+    offer = next(o for o in reversed(req.offers) if o.state == OfferState.approved)
+    await mark_booked(session, req, reference.strip()[:120] or None)
+    audit.record(session, "booked_by_operator", req.user_id, req.id)
+    return req, offer
+
+
+async def operator_slot_gone(session: AsyncSession, request_id: int) -> CitaRequest:
+    req = await session.get(CitaRequest, request_id, options=[selectinload(CitaRequest.offers)])
+    if not req or req.state not in (RequestState.booking, RequestState.offer_pending):
+        raise RuleError("nothing_to_release")
+    for o in req.offers:
+        if o.state in (OfferState.pending, OfferState.approved):
+            o.state = OfferState.expired
+    req.state = RequestState.monitoring
+    audit.record(session, "slot_gone_operator", req.user_id, req.id)
+    return req
+
+
+async def operator_checked(session: AsyncSession, request_id: int) -> None:
+    req = await session.get(CitaRequest, request_id)
+    if req and req.state == RequestState.monitoring:
+        await mark_checked(session, req, "no_slots:operator")

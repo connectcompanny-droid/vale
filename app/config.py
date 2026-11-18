@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     # Language of the fixed messages until the client shows another one.
     default_lang: str = "es"
 
+    # Automatic checks of the government sites by the robot. Off while a site refuses automated
+    # access: Vale then works in assisted mode (client books with a kit, or an operator books).
+    auto_checks: bool = True
+    # Who books when the robot does not: "self" (Vale prepares, client books) or "operator"
+    # (a person on Vale's side books from the operator panel). Clients can ask for the other one.
+    default_booking_mode: str = "self"
+    operator_enabled: bool = True
+    # WhatsApp number (digits) told when a client confirms a slot the operator offered.
+    operator_phone: str = ""
+    self_nudge_days: int = 14
+
     # Appointment systems Vale books on by itself: icp (extranjería), aeat (identity appointment for
     # the digital certificate). Enable one only after validating it on the real site.
     enabled_sites: str = "icp"

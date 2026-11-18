@@ -11,14 +11,15 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import audit, llm
-from app.agent.prompts import CERT_BOOKING_OFF, CERT_BOOKING_ON, SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
+from app.agent.prompts import ASSISTED_NOTE, CERT_BOOKING_OFF, CERT_BOOKING_ON, ROBOT_NOTE, SYSTEM_PROMPT, WEB_NOTE, WHATSAPP_NOTE
 from app.citas import service
 from app.citas.catalog import PROVINCES, TRAMITES, find_province, tramite_enabled
 from app.config import get_settings
-from app.models import AuditEvent, ExternalAppointment, User
+from app.models import AuditEvent, CitaRequest, ExternalAppointment, User
 
 log = logging.getLogger(__name__)
 MAX_HISTORY = 16
@@ -36,6 +37,33 @@ TOOLS = [
             },
             "required": ["province", "tramite_code"],
         },
+    },
+    {
+        "name": "choose_booking_mode",
+        "description": (
+            "Who books a request while Vale works in assisted mode: 'self' (Vale sends the person a booking kit with the "
+            "link and their details ready to copy, they book in about 2 minutes) or 'operator' (Vale's team looks for a "
+            "slot, offers it in the chat and books it after the person confirms). Call it when the person says which they prefer."
+        ),
+        "input_schema": {"type": "object", "properties": {
+            "request_id": {"type": "integer"}, "mode": {"type": "string", "enum": ["self", "operator"]},
+        }, "required": ["request_id", "mode"]},
+    },
+    {
+        "name": "resend_booking_kit",
+        "description": "Send the booking kit again (link, options to pick, details to copy) for a request in 'self' mode.",
+        "input_schema": {"type": "object", "properties": {"request_id": {"type": "integer"}}, "required": ["request_id"]},
+    },
+    {
+        "name": "report_booked_by_client",
+        "description": (
+            "The person says they booked the appointment themselves. Record it with the date and time exactly as they "
+            "said (DD/MM/YYYY HH:MM) and the office, so Vale reminds them the day before. Ask for whatever is missing first."
+        ),
+        "input_schema": {"type": "object", "properties": {
+            "request_id": {"type": "integer"}, "starts_at": {"type": "string"}, "office": {"type": "string"},
+            "reference": {"type": "string", "description": "Receipt/justificante code if they have it"},
+        }, "required": ["request_id", "starts_at", "office"]},
     },
     {
         "name": "get_my_status",
@@ -138,12 +166,38 @@ class Agent:
                     "details_waiting_for_confirmation": bool(await service.latest_pending(session, user.id)),
                     "requests": [
                         {"request_id": r.id, "province": r.province, "tramite": r.tramite_code, "state": r.state.value,
+                         "who_books": ("vale_robot" if get_settings().auto_checks else r.mode),
                          "checks": r.checks, "missing": service.missing_fields(profile, r.tramite_code, user.phone),
                          **({"payment_link": r.activation_link_url} if r.state.value == "awaiting_payment" and r.activation_link_url
                             and r.activation_link_url.startswith("http") else {})}
                         for r in await service.active_requests(session, user.id)
                     ],
                 }
+            if name == "choose_booking_mode":
+                req = await service.set_mode(session, user, int(args["request_id"]), str(args.get("mode")))
+                if not get_settings().auto_checks and req.state.value == "monitoring":
+                    req.kit_sent_at = None  # the matching message (kit or "our team handles it") goes out next
+                return {"mode": req.mode}
+            if name == "resend_booking_kit":
+                from app import assisted
+
+                req = await session.get(CitaRequest, int(args["request_id"]), options=[selectinload(CitaRequest.user)])
+                if not req or req.user_id != user.id or req.mode != "self" or req.state.value != "monitoring":
+                    return {"error": "no_kit_for_this_request"}
+                return {"kit": assisted.booking_kit(req, await service.get_profile(session, user.id), user.lang),
+                        "note": "Send this text to the person exactly as it is."}
+            if name == "report_booked_by_client":
+                from app.notifications import appointment_date
+
+                when = str(args.get("starts_at", ""))
+                day = appointment_date(when)
+                if day is None:
+                    return {"error": "date_not_understood", "hint": "Ask for the date as DD/MM/YYYY and the time"}
+                if day < service.utcnow().date():
+                    return {"error": "date_in_the_past"}
+                req = await service.record_client_booking(session, user, int(args["request_id"]), when,
+                                                         str(args.get("office", "")), args.get("reference"))
+                return {"recorded": req.id, "reminder": "the day before"}
             if name == "cancel_cita_request":
                 req = await service.cancel_request(session, user, int(args["request_id"]))
                 return {"cancelled": req.id}
@@ -219,6 +273,7 @@ class Agent:
             channel=WEB_NOTE.format(ttl=get_settings().offer_ttl_minutes) if service.is_web(user.phone) else WHATSAPP_NOTE,
             provinces=", ".join(PROVINCES.values()),
             tramites="; ".join(f"{t.code} = {t.label.get(user.lang, t.label['es'])}" for t in TRAMITES.values() if tramite_enabled(t.code)),
+            assisted=ASSISTED_NOTE if not get_settings().auto_checks else ROBOT_NOTE,
             cert_booking=CERT_BOOKING_ON if tramite_enabled("acreditacion_certificado") else CERT_BOOKING_OFF,
         )
         history = [h for h in (user.history or []) if h.get("role") in ("user", "assistant")][-MAX_HISTORY:]

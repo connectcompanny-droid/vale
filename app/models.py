@@ -103,6 +103,10 @@ class CitaRequest(Base):
     # Notifications sent at most once (reminder) or once a day (site paused).
     reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     pause_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Assisted mode: who books ("self" = the client with Vale's kit, "operator" = Vale's team).
+    mode: Mapped[str] = mapped_column(String(10), default="self", server_default="self")
+    kit_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_nudge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

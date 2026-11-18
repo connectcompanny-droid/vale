@@ -138,6 +138,26 @@ MESSAGES: dict[str, dict[str, str]] = {
         "es": "Pago recibido ✓ ¡Gracias! Mucha suerte en tu cita.",
         "en": "Payment received ✓ Thank you! Good luck at your appointment.",
     },
+    "booking_kit": {
+        "es": "Todo listo para pedir tu cita de *{tramite}* en {province}. Los huecos aparecen sin aviso, así que lo mejor es intentarlo en varios momentos del día. Tardas unos 2 minutos:\n\n1. Entra en {url}\n2. Provincia: *{province}*. Trámite: el que diga *{option}*. Pulsa Aceptar y luego Entrar.\n3. Copia tus datos:\n• Documento: *{doc_type}* {number}\n• Nombre: {name}\n• País: {nationality}\n{contact}\n4. Si sale \"no hay citas\", prueba más tarde. Si sale un hueco, elígelo y confirma.\n\nCuando la tengas, dime el día, la hora y la oficina y te aviso la víspera. Si prefieres que lo hagamos nosotros, dímelo.",
+        "pt": "Tudo pronto para pedir a sua cita de *{tramite}* em {province}. As vagas aparecem sem aviso, então o melhor é tentar em vários momentos do dia. Leva uns 2 minutos:\n\n1. Entre em {url}\n2. Província: *{province}*. Trâmite: o que disser *{option}*. Toque em Aceptar e depois em Entrar.\n3. Copie os seus dados:\n• Documento: *{doc_type}* {number}\n• Nome: {name}\n• País: {nationality}\n{contact}\n4. Se aparecer \"no hay citas\", tente mais tarde. Se aparecer uma vaga, escolha e confirme.\n\nQuando conseguir, me diga o dia, a hora e o escritório que eu te lembro na véspera. Se preferir que a gente faça, é só dizer.",
+        "en": "All set to request your *{tramite}* appointment in {province}. Slots appear without warning, so try at different times of the day. It takes about 2 minutes:\n\n1. Go to {url}\n2. Province: *{province}*. Procedure: the one that says *{option}*. Press Aceptar, then Entrar.\n3. Copy your details:\n• Document: *{doc_type}* {number}\n• Name: {name}\n• Country: {nationality}\n{contact}\n4. If it says \"no hay citas\", try again later. If a slot shows up, pick it and confirm.\n\nOnce you have it, tell me the day, time and office and I'll remind you the day before. If you'd rather we do it, just say so.",
+    },
+    "booking_nudge": {
+        "es": "¿Has podido conseguir la cita de {tramite}? Si ya la tienes, dime día, hora y oficina. Si no, hoy es buen día para volver a intentarlo: {url}",
+        "pt": "Conseguiu a cita de {tramite}? Se já tem, me diga o dia, a hora e o escritório. Se não, hoje é um bom dia para tentar de novo: {url}",
+        "en": "Did you manage to get the {tramite} appointment? If so, tell me the day, time and office. If not, today is a good day to try again: {url}",
+    },
+    "operator_waiting": {
+        "es": "Perfecto, nuestro equipo se encarga. Buscamos hueco en la web oficial y, en cuanto haya uno, te lo propongo aquí para que lo confirmes. No reservamos nada sin tu sí.",
+        "pt": "Perfeito, a nossa equipe cuida disso. Procuramos vaga no site oficial e, assim que houver uma, eu te proponho aqui para você confirmar. Não reservamos nada sem o seu sim.",
+        "en": "Great, our team will handle it. We look for a slot on the official site and, as soon as there is one, I'll propose it here for you to confirm. Nothing is booked without your yes.",
+    },
+    "booking_by_team": {
+        "es": "¡Confirmado! Nuestro equipo la está reservando ahora mismo a tu nombre. En unos minutos te mando el justificante. ⏳",
+        "pt": "Confirmado! A nossa equipe está reservando agora no seu nome. Em alguns minutos te mando o comprovante. ⏳",
+        "en": "Confirmed! Our team is booking it in your name right now. I'll send the receipt in a few minutes. ⏳",
+    },
     "external_reminder": {
         "pt": "⏰ Lembrete: amanhã você tem {what}.\n\n🗓 {starts_at}\n📍 {place}\n\nLeve o código do pedido, o passaporte e o documento com o seu NIE. Se precisar, me pergunte.",
         "es": "⏰ Recordatorio: mañana tienes {what}.\n\n🗓 {starts_at}\n📍 {place}\n\nLleva el código de solicitud, el pasaporte y el documento con tu NIE. Si necesitas algo, pregúntame.",

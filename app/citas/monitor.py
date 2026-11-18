@@ -96,6 +96,8 @@ class Monitor:
         await self.provider.sweep()
         if self.primary:
             await self.housekeeping()
+        if not get_settings().auto_checks:
+            return  # assisted mode: the robot never touches the government site
         if await self.paused():
             return
         await self.book_approved()
@@ -117,7 +119,10 @@ class Monitor:
         """Messages that don't touch the government site: payment links and reminders."""
         from app import billing, notifications
 
-        jobs = [billing.send_pending_links, notifications.send_reminders, notifications.send_external_reminders]
+        from app import assisted
+
+        jobs = [billing.send_pending_links, notifications.send_reminders, notifications.send_external_reminders,
+                assisted.send_kits, assisted.send_nudges]
         if time.monotonic() - self._last_cleanup > 6 * 3600:  # also covers setups without the worker's cron
             from app import maintenance
 
